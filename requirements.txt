@@ -1,0 +1,6 @@
+pip install selenium
+pip install opencv-python
+pip install numpy
+pip install ultralytics
+pip install torch
+pip install Pillow

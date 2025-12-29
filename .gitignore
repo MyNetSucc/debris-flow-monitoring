@@ -1,0 +1,33 @@
+# Model files (too large for GitHub)
+*.pt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.env
+.venv
+env/
+venv/
+
+# Logs and saved images
+logs/
+saved_images/
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# Temp
+*.tmp
+test_folder/
+
+# ChromeDriver
+chromedriver-win64/
+
+# OS
+Thumbs.db
+.DS_Store

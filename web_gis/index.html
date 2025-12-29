@@ -1,0 +1,1498 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Debris-Flow Monitoring System</title>
+  <meta name="description" content="即時土石流監測系統 - Real-time debris flow detection and monitoring">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@latest/dist/ol.css">
+  <script src="https://cdn.jsdelivr.net/npm/ol@latest/dist/ol.js"></script>
+
+  <style>
+    :root {
+      --bg-primary: #0f1419;
+      --bg-secondary: #1a1f26;
+      --bg-tertiary: #242b33;
+      --bg-glass: rgba(26, 31, 38, 0.85);
+      --text-primary: #f1f5f9;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --border-color: rgba(148, 163, 184, 0.15);
+      --accent-blue: #3b82f6;
+      --accent-cyan: #06b6d4;
+      --alert-red: #ef4444;
+      --alert-yellow: #eab308;
+      --alert-green: #22c55e;
+      --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.4);
+      --radius-lg: 16px;
+      --radius-md: 12px;
+      --radius-sm: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      font-family: 'Inter', 'Noto Sans TC', system-ui, -apple-system, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+    }
+
+    /* === Layout === */
+    .container {
+      display: flex;
+      width: 100%;
+      height: 100%;
+    }
+
+    #map {
+      flex: 1;
+      height: 100%;
+      position: relative;
+      background: linear-gradient(135deg, #1a1f26 0%, #0f1419 100%);
+    }
+
+    #sidebar {
+      width: 420px;
+      height: 100%;
+      background: var(--bg-secondary);
+      border-left: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* === Sidebar Header === */
+    .sidebar-header {
+      padding: 20px 24px 16px;
+      background: linear-gradient(180deg, var(--bg-tertiary) 0%, var(--bg-secondary) 100%);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .sidebar-header h1 {
+      margin: 0 0 4px;
+      font-size: 1.5rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .sidebar-header p {
+      margin: 0;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+    }
+
+    /* === Toolbar === */
+    .toolbar {
+      padding: 16px 24px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .search-box {
+      flex: 1 1 200px;
+      padding: 10px 16px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      color: var(--text-primary);
+      font-size: 0.9rem;
+      transition: all 0.2s ease;
+    }
+
+    .search-box:focus {
+      outline: none;
+      border-color: var(--accent-blue);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    }
+
+    .search-box::placeholder {
+      color: var(--text-muted);
+    }
+
+    .filter-group {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .filter-btn {
+      padding: 8px 14px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      color: var(--text-secondary);
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .filter-btn:hover {
+      background: var(--bg-glass);
+      border-color: var(--text-muted);
+    }
+
+    .filter-btn.active {
+      border-color: var(--accent-blue);
+      color: var(--text-primary);
+    }
+
+    .filter-btn input {
+      display: none;
+    }
+
+    .filter-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .filter-dot.red {
+      background: var(--alert-red);
+    }
+
+    .filter-dot.yellow {
+      background: var(--alert-yellow);
+    }
+
+    .filter-dot.green {
+      background: var(--alert-green);
+    }
+
+    .action-btn {
+      padding: 8px 14px;
+      background: transparent;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      color: var(--text-secondary);
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .action-btn:hover {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+    }
+
+    /* === Camera List === */
+    .camera-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+    }
+
+    .camera-list::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .camera-list::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .camera-list::-webkit-scrollbar-thumb {
+      background: var(--bg-tertiary);
+      border-radius: 3px;
+    }
+
+    /* === Alert Groups === */
+    .alert-group {
+      margin-bottom: 16px;
+    }
+
+    .group-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.2s ease;
+    }
+
+    .group-header:hover {
+      background: rgba(59, 130, 246, 0.1);
+      border-color: var(--accent-blue);
+    }
+
+    .group-header .badge {
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    .group-header.red .badge {
+      background: rgba(239, 68, 68, 0.2);
+      color: var(--alert-red);
+    }
+
+    .group-header.yellow .badge {
+      background: rgba(234, 179, 8, 0.2);
+      color: var(--alert-yellow);
+    }
+
+    .group-header.green .badge {
+      background: rgba(34, 197, 94, 0.2);
+      color: var(--alert-green);
+    }
+
+    .group-header .icon {
+      font-size: 1.2rem;
+    }
+
+    .group-header .title {
+      flex: 1;
+      font-weight: 600;
+    }
+
+    .group-header .count {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    .group-header .chevron {
+      color: var(--text-muted);
+      transition: transform 0.2s ease;
+    }
+
+    .group-header.collapsed .chevron {
+      transform: rotate(-90deg);
+    }
+
+    .group-body {
+      padding: 12px 0 0;
+    }
+
+    .group-body.hidden {
+      display: none;
+    }
+
+    /* === Camera Card === */
+    .cam-card {
+      background: var(--bg-glass);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      margin-bottom: 12px;
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .cam-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 4px;
+      height: 100%;
+      border-radius: 4px 0 0 4px;
+    }
+
+    .cam-card.alert-red::before {
+      background: var(--alert-red);
+    }
+
+    .cam-card.alert-yellow::before {
+      background: var(--alert-yellow);
+    }
+
+    .cam-card.alert-green::before {
+      background: var(--alert-green);
+    }
+
+    .cam-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-lg);
+      border-color: rgba(59, 130, 246, 0.3);
+    }
+
+    .cam-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 12px;
+    }
+
+    .cam-name {
+      font-weight: 600;
+      font-size: 1rem;
+      color: var(--text-primary);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    .cam-name:hover {
+      color: var(--accent-blue);
+    }
+
+    .alert-badge {
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .alert-badge.red {
+      background: rgba(239, 68, 68, 0.2);
+      color: var(--alert-red);
+      animation: pulse-red 2s infinite;
+    }
+
+    .alert-badge.yellow {
+      background: rgba(234, 179, 8, 0.2);
+      color: var(--alert-yellow);
+      animation: pulse-yellow 2s infinite;
+    }
+
+    .alert-badge.green {
+      background: rgba(34, 197, 94, 0.2);
+      color: var(--alert-green);
+    }
+
+    @keyframes pulse-red {
+
+      0%,
+      100% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+      }
+
+      50% {
+        box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+      }
+    }
+
+    @keyframes pulse-yellow {
+
+      0%,
+      100% {
+        box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.3);
+      }
+
+      50% {
+        box-shadow: 0 0 0 6px rgba(234, 179, 8, 0);
+      }
+    }
+
+    .cam-time {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    .cam-reason {
+      font-size: 0.85rem;
+      color: var(--alert-yellow);
+      margin-bottom: 12px;
+    }
+
+    .cam-content {
+      display: flex;
+      gap: 16px;
+    }
+
+    .cam-thumb {
+      width: 160px;
+      height: 90px;
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      background: var(--bg-primary);
+      position: relative;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .cam-thumb img {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: opacity 0.4s ease;
+    }
+
+    .cam-thumb .thumb-b {
+      opacity: 0;
+    }
+
+    .cam-thumb:hover {
+      transform: scale(1.02);
+    }
+
+    .cam-stats {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 4px 0;
+      font-size: 0.8rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .stat-row:last-child {
+      border-bottom: none;
+    }
+
+    .stat-label {
+      color: var(--text-muted);
+    }
+
+    .stat-value {
+      color: var(--text-primary);
+      font-weight: 500;
+    }
+
+    .cam-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .cam-btn {
+      flex: 1;
+      padding: 8px 12px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      color: var(--text-secondary);
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-align: center;
+    }
+
+    .cam-btn:hover {
+      background: var(--accent-blue);
+      border-color: var(--accent-blue);
+      color: white;
+    }
+
+    .cam-btn.primary {
+      background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+      border: none;
+      color: white;
+    }
+
+    .cam-btn.primary:hover {
+      opacity: 0.9;
+      transform: translateY(-1px);
+    }
+
+    /* === Sparkline === */
+    .spark-container {
+      margin-top: 12px;
+    }
+
+    .spark {
+      width: 100%;
+      height: 60px;
+      background: var(--bg-primary);
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-color);
+    }
+
+    /* === Floating Viewer === */
+    #floating-viewer {
+      display: none;
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: min(75vw, 1100px);
+      max-width: 96vw;
+      max-height: 92vh;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      z-index: 5000;
+      overflow: hidden;
+      resize: both;
+    }
+
+    .fv-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      background: linear-gradient(180deg, var(--bg-tertiary) 0%, var(--bg-secondary) 100%);
+      border-bottom: 1px solid var(--border-color);
+      cursor: move;
+    }
+
+    .fv-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+
+    .fv-title a {
+      color: var(--text-primary);
+      text-decoration: none;
+    }
+
+    .fv-title a:hover {
+      color: var(--accent-blue);
+    }
+
+    .fv-close {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 1.5rem;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: var(--radius-sm);
+      transition: all 0.2s;
+    }
+
+    .fv-close:hover {
+      background: var(--alert-red);
+      color: white;
+    }
+
+    .fv-image-wrap {
+      position: relative;
+      height: 380px;
+      background: #000;
+    }
+
+    .fv-image-wrap img {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      transition: opacity 0.4s ease;
+    }
+
+    #fv-img-b {
+      opacity: 0;
+    }
+
+    .fv-counter {
+      position: absolute;
+      left: 16px;
+      top: 16px;
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      backdrop-filter: blur(4px);
+    }
+
+    .fv-nav {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      background: rgba(0, 0, 0, 0.5);
+      border: none;
+      color: white;
+      font-size: 2rem;
+      padding: 16px 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .fv-nav:hover {
+      background: var(--accent-blue);
+    }
+
+    .fv-nav.prev {
+      left: 0;
+      border-radius: 0 8px 8px 0;
+    }
+
+    .fv-nav.next {
+      right: 0;
+      border-radius: 8px 0 0 8px;
+    }
+
+    .fv-charts {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+      padding: 20px;
+      background: var(--bg-secondary);
+      max-height: 320px;
+      overflow-y: auto;
+    }
+
+    .fv-chart-section {
+      margin-bottom: 8px;
+    }
+
+    .fv-chart-title {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+
+    .fv-plot {
+      width: 100%;
+      height: 180px;
+      background: var(--bg-primary);
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-color);
+    }
+
+    .fv-info {
+      padding: 16px 20px;
+      background: var(--bg-tertiary);
+      border-top: 1px solid var(--border-color);
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+
+    .fv-info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+    }
+
+    .fv-info-item {
+      display: flex;
+      gap: 8px;
+    }
+
+    .fv-info-label {
+      color: var(--text-muted);
+    }
+
+    .fv-info-value {
+      color: var(--text-primary);
+      font-weight: 500;
+    }
+
+    /* === Log Panel === */
+    #logToggleBtn {
+      position: absolute;
+      left: 16px;
+      bottom: 16px;
+      background: var(--bg-tertiary);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-color);
+      padding: 10px 16px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 0.85rem;
+      z-index: 2000;
+      transition: all 0.2s;
+    }
+
+    #logToggleBtn:hover {
+      background: var(--accent-blue);
+      color: white;
+      border-color: var(--accent-blue);
+    }
+
+    #logPanel {
+      display: none;
+      position: absolute;
+      left: 16px;
+      bottom: 70px;
+      width: 400px;
+      height: 220px;
+      background: var(--bg-glass);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      overflow: auto;
+      z-index: 2000;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 0.8rem;
+    }
+
+    #logPanel pre {
+      margin: 0;
+      white-space: pre-wrap;
+      color: var(--text-secondary);
+    }
+
+    /* === Toggle Switch === */
+    .toggle-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+    }
+
+    .toggle {
+      position: relative;
+      width: 44px;
+      height: 24px;
+      background: var(--bg-primary);
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    .toggle::after {
+      content: '';
+      position: absolute;
+      left: 2px;
+      top: 2px;
+      width: 20px;
+      height: 20px;
+      background: var(--text-muted);
+      border-radius: 50%;
+      transition: all 0.3s;
+    }
+
+    .toggle.active {
+      background: var(--accent-blue);
+    }
+
+    .toggle.active::after {
+      left: 22px;
+      background: white;
+    }
+
+    /* === Dark map tiles === */
+    .ol-viewport {
+      background: var(--bg-primary) !important;
+    }
+
+    /* === Responsive === */
+    @media (max-width: 900px) {
+      .container {
+        flex-direction: column-reverse;
+      }
+
+      #sidebar {
+        width: 100%;
+        height: 50%;
+      }
+
+      #map {
+        height: 50%;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div id="map">
+      <button id="logToggleBtn">📋 顯示日誌</button>
+      <div id="logPanel">
+        <pre id="logContent"></pre>
+      </div>
+    </div>
+
+    <div id="sidebar">
+      <div class="sidebar-header">
+        <h1>🌊 土石流監測系統</h1>
+        <p>Debris Flow Monitoring System</p>
+      </div>
+
+      <div class="toolbar">
+        <input id="searchBox" class="search-box" type="text" placeholder="🔍 搜尋攝影機、縣市、行政區..." />
+        <div class="filter-group">
+          <label class="filter-btn active" id="fRedBtn"><input type="checkbox" id="fRed" checked><span
+              class="filter-dot red"></span>紅</label>
+          <label class="filter-btn active" id="fYellowBtn"><input type="checkbox" id="fYellow" checked><span
+              class="filter-dot yellow"></span>黃</label>
+          <label class="filter-btn active" id="fGreenBtn"><input type="checkbox" id="fGreen" checked><span
+              class="filter-dot green"></span>綠</label>
+        </div>
+        <div class="toggle-wrap">
+          <span>原圖</span>
+          <div id="showRawToggle" class="toggle"></div>
+        </div>
+      </div>
+
+      <div class="camera-list" id="cameraList">
+        <div id="group-red" class="alert-group"></div>
+        <div id="group-yellow" class="alert-group"></div>
+        <div id="group-green" class="alert-group"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating Viewer -->
+  <div id="floating-viewer">
+    <div class="fv-header" id="fv-header">
+      <span class="fv-title" id="fv-title"></span>
+      <button class="fv-close" id="fv-close" title="關閉 (Esc)">✕</button>
+    </div>
+    <div class="fv-image-wrap" id="fv-wrap">
+      <div class="fv-counter" id="fv-count">0 / 0</div>
+      <img id="fv-img-a" alt="影像"><img id="fv-img-b" alt="">
+      <button class="fv-nav prev" id="fv-prev">‹</button>
+      <button class="fv-nav next" id="fv-next">›</button>
+    </div>
+    <div class="fv-charts">
+      <div class="fv-chart-section">
+        <div class="fv-chart-title">📊 像素占比 (Proportion)</div>
+        <canvas id="fv-chart" class="fv-plot"></canvas>
+      </div>
+      <div class="fv-chart-section">
+        <div class="fv-chart-title">📈 信心值 (Confidence)</div>
+        <canvas id="fv-chart-conf" class="fv-plot"></canvas>
+      </div>
+    </div>
+    <div class="fv-info" id="fv-info"></div>
+  </div>
+
+  <script>
+    /* ===== Constants ===== */
+    const LABELS = ['clear_water', 'muddy_water', 'debris_flow', 'large_rock'];
+    const COLORS = {
+      clear_water: '#3b82f6',
+      muddy_water: '#eab308',
+      debris_flow: '#ef4444',
+      large_rock: '#22c55e'
+    };
+    const LABEL_NAMES = {
+      clear_water: '清水',
+      muddy_water: '混濁水',
+      debris_flow: '土石流',
+      large_rock: '大型石塊'
+    };
+
+    const FETCH_INTERVAL = 5000;
+    const THUMB_INTERVAL = 1200;
+    const FV_INTERVAL = 1200;
+    const DATA_ROOT = '../';
+
+    let map, vectorLayer, markers = {}, cctvData = [];
+    let currentStatus = {};
+    const thumbBuf = {};
+    const seriesStore = {};
+    const MAX_POINTS = 300;
+    const groupOpen = { red: true, yellow: true, green: true };
+    let SHOW_RAW = false;
+    let mainTimer, logTimer, fvSlide, fvFetch;
+    const FV = { open: false, cam: null, seq: [], idx: 0 };
+    const CHART = { forCam: null, vis: Object.fromEntries(LABELS.map(l => [l, true])), hoverX: null };
+
+    /* ===== Init ===== */
+    window.onload = () => {
+      initMap();
+      loadCCTV().then(() => {
+        buildGroups();
+        refreshAll();
+        mainTimer = setInterval(refreshAll, FETCH_INTERVAL);
+        setInterval(switchThumbs, THUMB_INTERVAL);
+        fitToAllMarkers();
+      });
+
+      // Event listeners
+      document.getElementById('searchBox').addEventListener('input', debounce(render, 200));
+      ['fRed', 'fYellow', 'fGreen'].forEach(id => {
+        const cb = document.getElementById(id);
+        const btn = document.getElementById(id + 'Btn');
+        cb.addEventListener('change', () => {
+          btn.classList.toggle('active', cb.checked);
+          render();
+        });
+      });
+
+      document.getElementById('showRawToggle').onclick = function () {
+        this.classList.toggle('active');
+        SHOW_RAW = this.classList.contains('active');
+        refreshAll();
+        if (FV.open && FV.cam) openFloating(FV.cam);
+      };
+
+      document.getElementById('logToggleBtn').onclick = toggleLog;
+      document.getElementById('fv-close').onclick = closeFloating;
+      document.getElementById('fv-prev').onclick = () => fvShowIndex(FV.idx - 1);
+      document.getElementById('fv-next').onclick = () => fvShowIndex(FV.idx + 1);
+
+      document.addEventListener('keydown', e => {
+        if (!FV.open) return;
+        if (e.key === 'ArrowRight') fvShowIndex(FV.idx + 1);
+        else if (e.key === 'ArrowLeft') fvShowIndex(FV.idx - 1);
+        else if (e.key === 'Escape') closeFloating();
+      });
+
+      makeDraggable(document.getElementById('floating-viewer'), document.getElementById('fv-header'));
+    };
+
+    /* ===== Map ===== */
+    function initMap() {
+      map = new ol.Map({
+        target: 'map',
+        layers: [
+          new ol.layer.Tile({
+            source: new ol.source.XYZ({
+              url: 'https://{a-c}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+              attributions: '© CARTO'
+            })
+          })
+        ],
+        view: new ol.View({ center: ol.proj.fromLonLat([121, 23.7]), zoom: 7 })
+      });
+      vectorLayer = new ol.layer.Vector({ source: new ol.source.Vector() });
+      map.addLayer(vectorLayer);
+      map.on('click', e => {
+        const f = map.forEachFeatureAtPixel(e.pixel, x => x);
+        if (f) openFloating(f.get('cameraName'));
+      });
+    }
+
+    function addMarker(name, lon, lat) {
+      const f = new ol.Feature({
+        geometry: new ol.geom.Point(ol.proj.fromLonLat([lon, lat])),
+        cameraName: name
+      });
+      f.setStyle(createMarkerStyle('gray', 0));
+      vectorLayer.getSource().addFeature(f);
+      markers[name] = f;
+    }
+
+    function createMarkerStyle(color, zIndex) {
+      const colorMap = { red: '#ef4444', yellow: '#eab308', green: '#22c55e', gray: '#64748b' };
+      return new ol.style.Style({
+        zIndex,
+        image: new ol.style.Circle({
+          radius: 8,
+          fill: new ol.style.Fill({ color: colorMap[color] || color }),
+          stroke: new ol.style.Stroke({ color: '#fff', width: 2 })
+        })
+      });
+    }
+
+    function setMarkerColor(name, alert) {
+      const f = markers[name]; if (!f) return;
+      const z = alert === 'red' ? 300 : alert === 'yellow' ? 200 : 100;
+      f.setStyle(createMarkerStyle(alert || 'gray', z));
+    }
+
+    function fitToAllMarkers() {
+      const ext = vectorLayer.getSource().getExtent();
+      if (ext && !ol.extent.isEmpty(ext)) {
+        map.getView().fit(ext, { padding: [50, 50, 50, 50], duration: 600, maxZoom: 12 });
+      }
+    }
+
+    /* ===== Load Data ===== */
+    async function loadCCTV() {
+      const res = await fetch(DATA_ROOT + 'cctv.json?_t=' + Date.now());
+      cctvData = await res.json();
+      cctvData.forEach(c => {
+        const lon = parseFloat(c['經度']), lat = parseFloat(c['緯度']);
+        if (!isNaN(lon) && !isNaN(lat)) addMarker(c['攝影機名稱'], lon, lat);
+      });
+    }
+
+    function refreshAll() {
+      fetch(DATA_ROOT + 'camera_status.json?_t=' + Date.now())
+        .then(r => r.json())
+        .then(st => {
+          currentStatus = st;
+          cctvData.forEach(c => {
+            const name = c['攝影機名稱'];
+            const s = st[name] || {};
+            setMarkerColor(name, s.alert);
+            updateThumbBuffer(name, s);
+            pushSeries(name, s);
+          });
+          render();
+        })
+        .catch(err => console.error('refreshAll:', err));
+    }
+
+    function updateThumbBuffer(name, s) {
+      const buf = thumbBuf[name] ||= { list: [], idx: 0 };
+      let seq = [];
+      const primary = SHOW_RAW ? s.historyRaw : s.history;
+      const fallback = SHOW_RAW ? s.history : s.historyRaw;
+      const primaryUrl = SHOW_RAW ? s.rawUrl : s.imageUrl;
+      const fallbackUrl = SHOW_RAW ? s.imageUrl : s.rawUrl;
+
+      if (Array.isArray(primary)) seq = primary.slice(-8).filter(Boolean);
+      if (primaryUrl && !seq.includes(primaryUrl)) seq.push(primaryUrl);
+      if (seq.length === 0 && Array.isArray(fallback)) {
+        seq = fallback.slice(-8).filter(Boolean);
+        if (fallbackUrl && !seq.includes(fallbackUrl)) seq.push(fallbackUrl);
+      }
+      buf.list = [...new Set(seq)];
+      buf.idx = buf.idx % Math.max(buf.list.length, 1);
+    }
+
+    /* ===== Build Groups ===== */
+    function buildGroups() {
+      ['red', 'yellow', 'green'].forEach(al => {
+        const container = document.getElementById('group-' + al);
+        container.innerHTML = `
+      <div class="group-header ${al}" data-alert="${al}">
+        <span class="icon">${al === 'red' ? '🔴' : al === 'yellow' ? '🟡' : '🟢'}</span>
+        <span class="title">${al === 'red' ? '紅燈警報' : al === 'yellow' ? '黃燈警示' : '綠燈正常'}</span>
+        <span class="count" data-count="${al}">0</span>
+        <span class="badge">${al.toUpperCase()}</span>
+        <span class="chevron">▼</span>
+      </div>
+      <div class="group-body" data-body="${al}"></div>`;
+
+        container.querySelector('.group-header').onclick = () => {
+          groupOpen[al] = !groupOpen[al];
+          const header = container.querySelector('.group-header');
+          const body = container.querySelector('.group-body');
+          header.classList.toggle('collapsed', !groupOpen[al]);
+          body.classList.toggle('hidden', !groupOpen[al]);
+        };
+      });
+    }
+
+    /* ===== Render ===== */
+    function render() {
+      const q = document.getElementById('searchBox').value.trim().toLowerCase();
+      const showRed = document.getElementById('fRed').checked;
+      const showYel = document.getElementById('fYellow').checked;
+      const showGrn = document.getElementById('fGreen').checked;
+
+      const bucket = { red: [], yellow: [], green: [] };
+
+      cctvData.forEach(c => {
+        const name = c['攝影機名稱'];
+        const s = currentStatus[name] || {};
+        const alert = s.alert || 'green';
+
+        if ((alert === 'red' && !showRed) || (alert === 'yellow' && !showYel) || (alert === 'green' && !showGrn)) return;
+
+        const hay = [name, c['縣市'] || '', c['行政區'] || ''].join(' ').toLowerCase();
+        if (q && !hay.includes(q)) return;
+
+        bucket[alert].push({ c, name, s });
+      });
+
+      ['red', 'yellow', 'green'].forEach(al => {
+        const list = bucket[al];
+        document.querySelector(`[data-count="${al}"]`).textContent = list.length;
+        const body = document.querySelector(`[data-body="${al}"]`);
+        body.innerHTML = '';
+        body.classList.toggle('hidden', !groupOpen[al]);
+
+        list.forEach(({ c, name, s }) => {
+          const card = buildCamCard(name, s, c);
+          body.appendChild(card);
+        });
+      });
+    }
+
+    function buildCamCard(name, s, c) {
+      const card = document.createElement('div');
+      card.className = `cam-card alert-${s.alert || 'green'}`;
+      card.dataset.cam = name;
+
+      const href = c['影像連結網址'] || '#';
+      const ts = s.timestamp || '--';
+      const reason = s.redReason || s.yellowReason || '';
+      const prop = s.proportion || {};
+      const conf = s.confidence || {};
+
+      card.innerHTML = `
+    <div class="cam-card-header">
+      <a class="cam-name" href="${href}" target="_blank">${name}</a>
+      <span class="alert-badge ${s.alert || 'green'}">${(s.alert || 'green').toUpperCase()}</span>
+    </div>
+    <div class="cam-time">⏱ ${ts}</div>
+    ${reason ? `<div class="cam-reason">⚠ ${reason}</div>` : ''}
+    <div class="cam-content">
+      <div class="cam-thumb" data-cam="${name}">
+        <img class="thumb-a" loading="lazy" alt="">
+        <img class="thumb-b" loading="lazy" alt="">
+      </div>
+      <div class="cam-stats">
+        ${LABELS.map(l => `
+          <div class="stat-row">
+            <span class="stat-label">${LABEL_NAMES[l]}</span>
+            <span class="stat-value">${((prop[l] || 0) * 100).toFixed(2)}% / ${(conf[l] || 0).toFixed(2)}</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+    <div class="cam-actions">
+      <button class="cam-btn primary view-btn">👁 即時檢視</button>
+      <button class="cam-btn loc-btn">📍 定位</button>
+    </div>
+    <div class="spark-container"><canvas class="spark"></canvas></div>
+  `;
+
+      card.querySelector('.view-btn').onclick = e => { e.stopPropagation(); openFloating(name); };
+      card.querySelector('.loc-btn').onclick = e => {
+        e.stopPropagation();
+        if (c['經度'] && c['緯度']) {
+          map.getView().animate({ center: ol.proj.fromLonLat([+c['經度'], +c['緯度']]), zoom: 14, duration: 800 });
+        }
+      };
+      card.querySelector('.cam-thumb').onclick = () => openFloating(name);
+
+      // Prime thumb
+      const buf = thumbBuf[name];
+      const thumbA = card.querySelector('.thumb-a');
+      if (buf?.list?.[0]) thumbA.src = buf.list[0];
+
+      // Draw spark
+      setTimeout(() => drawItemSpark(name, card.querySelector('.spark')), 50);
+
+      return card;
+    }
+
+    /* ===== Thumb Rotation ===== */
+    function switchThumbs() {
+      for (const cam in thumbBuf) {
+        const buf = thumbBuf[cam];
+        if (!buf.list || buf.list.length < 2) continue;
+
+        const card = document.querySelector(`.cam-card[data-cam="${cam}"]`);
+        if (!card) continue;
+
+        const thumbs = card.querySelectorAll('.cam-thumb img');
+        if (thumbs.length < 2) continue;
+
+        const [A, B] = thumbs;
+        const src = buf.list[buf.idx];
+        const back = buf.idx % 2 ? B : A;
+        const front = buf.idx % 2 ? A : B;
+
+        if (src && back.src !== src) {
+          back.style.transition = 'none';
+          back.style.opacity = 0;
+          back.src = src;
+          back.onload = () => {
+            back.style.transition = 'opacity 0.4s ease';
+            back.style.opacity = 1;
+            front.style.opacity = 0;
+          };
+        }
+        buf.idx = (buf.idx + 1) % buf.list.length;
+      }
+    }
+
+    /* ===== Floating Viewer ===== */
+    function openFloating(cam) {
+      const fv = document.getElementById('floating-viewer');
+      fv.style.display = 'block';
+      FV.open = true;
+      FV.cam = cam;
+
+      const c = cctvData.find(x => x['攝影機名稱'] === cam);
+      const href = c ? (c['影像連結網址'] || '#') : '#';
+      document.getElementById('fv-title').innerHTML = `<a href="${href}" target="_blank">${cam}</a>`;
+
+      clearInterval(fvSlide);
+      clearInterval(fvFetch);
+
+      const s0 = currentStatus[cam] || {};
+      FV.seq = buildSeq(s0);
+      FV.idx = 0;
+      fvShowIndex(0);
+      CHART.forCam = cam;
+
+      fvSlide = setInterval(() => { if (FV.seq.length) fvShowIndex(FV.idx + 1); }, FV_INTERVAL);
+
+      const fillInfo = () => {
+        fetch(DATA_ROOT + 'camera_status.json?_t=' + Date.now())
+          .then(r => r.json())
+          .then(d => {
+            const s = d[cam]; if (!s) return;
+            FV.seq = buildSeq(s);
+            updateFvCount();
+            pushSeries(cam, s);
+
+            const prop = s.proportion || {};
+            const conf = s.confidence || {};
+            document.getElementById('fv-info').innerHTML = `
+          <div class="fv-info-grid">
+            <div class="fv-info-item"><span class="fv-info-label">燈號:</span><span class="fv-info-value">${s.alert || '--'}</span></div>
+            <div class="fv-info-item"><span class="fv-info-label">時間:</span><span class="fv-info-value">${s.timestamp || '--'}</span></div>
+            <div class="fv-info-item"><span class="fv-info-label">原因:</span><span class="fv-info-value">${s.redReason || s.yellowReason || '--'}</span></div>
+            ${LABELS.map(l => `
+              <div class="fv-info-item">
+                <span class="fv-info-label">${LABEL_NAMES[l]}:</span>
+                <span class="fv-info-value">P=${((prop[l] || 0) * 100).toFixed(2)}% C=${(conf[l] || 0).toFixed(2)}</span>
+              </div>
+            `).join('')}
+          </div>
+        `;
+
+            drawFvChart(cam, 'fv-chart', 'prop');
+            drawFvChart(cam, 'fv-chart-conf', 'conf');
+          }).catch(console.error);
+      };
+      fillInfo();
+      fvFetch = setInterval(fillInfo, FETCH_INTERVAL);
+    }
+
+    function closeFloating() {
+      document.getElementById('floating-viewer').style.display = 'none';
+      clearInterval(fvSlide);
+      clearInterval(fvFetch);
+      FV.open = false;
+      FV.cam = null;
+    }
+
+    function buildSeq(s) {
+      let seq = [];
+      const primary = SHOW_RAW ? s.historyRaw : s.history;
+      const fallback = SHOW_RAW ? s.history : s.historyRaw;
+      const primaryUrl = SHOW_RAW ? s.rawUrl : s.imageUrl;
+
+      if (Array.isArray(primary)) seq = primary.slice(-12).filter(Boolean);
+      if (primaryUrl && !seq.includes(primaryUrl)) seq.push(primaryUrl);
+      if (!seq.length && Array.isArray(fallback)) seq = fallback.slice(-12).filter(Boolean);
+      return [...new Set(seq)];
+    }
+
+    function fvShowIndex(nextIdx) {
+      if (!FV.seq.length) return;
+      const n = FV.seq.length;
+      FV.idx = ((nextIdx % n) + n) % n;
+      const src = FV.seq[FV.idx];
+
+      const A = document.getElementById('fv-img-a');
+      const B = document.getElementById('fv-img-b');
+      const back = FV.idx % 2 ? B : A;
+      const front = FV.idx % 2 ? A : B;
+
+      if (src && back.src !== src) {
+        back.style.transition = 'none';
+        back.style.opacity = 0;
+        back.src = src;
+        back.onload = () => {
+          back.style.transition = 'opacity 0.4s ease';
+          back.style.opacity = 1;
+          front.style.opacity = 0;
+        };
+      }
+      updateFvCount();
+    }
+
+    function updateFvCount() {
+      document.getElementById('fv-count').textContent = `${FV.seq.length ? FV.idx + 1 : 0} / ${FV.seq.length}`;
+    }
+
+    /* ===== Charts ===== */
+    function pushSeries(name, s) {
+      const t = parseTs(s.timestamp) || new Date();
+      const ms = t.getTime();
+      const store = seriesStore[name] ||= {
+        t: [],
+        prop: Object.fromEntries(LABELS.map(l => [l, []])),
+        conf: Object.fromEntries(LABELS.map(l => [l, []])),
+        last: null
+      };
+
+      if (store.last === ms) return;
+      store.t.push(ms);
+      const prop = s.proportion || {};
+      const conf = s.confidence || {};
+      LABELS.forEach(l => {
+        store.prop[l].push(Number(prop[l]) || 0);
+        store.conf[l].push(Number(conf[l]) || 0);
+      });
+      store.last = ms;
+
+      if (store.t.length > MAX_POINTS) {
+        const cut = store.t.length - MAX_POINTS;
+        store.t.splice(0, cut);
+        LABELS.forEach(l => { store.prop[l].splice(0, cut); store.conf[l].splice(0, cut); });
+      }
+    }
+
+    function drawItemSpark(name, canvas) {
+      if (!canvas) return;
+      const store = seriesStore[name];
+      if (!store || store.t.length < 2) return;
+
+      const dpr = window.devicePixelRatio || 1;
+      const cssW = canvas.clientWidth || 260;
+      const cssH = canvas.clientHeight || 60;
+      canvas.width = cssW * dpr;
+      canvas.height = cssH * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      ctx.fillStyle = '#0f1419';
+      ctx.fillRect(0, 0, cssW, cssH);
+
+      const pad = { l: 4, r: 4, t: 4, b: 4 };
+      const W = cssW - pad.l - pad.r;
+      const H = cssH - pad.t - pad.b;
+      const N = store.t.length;
+
+      const xOf = i => pad.l + (W * i / (N - 1));
+      const yOf = v => pad.t + H - (Math.max(0, Math.min(1, v)) * H);
+
+      LABELS.forEach(l => {
+        const arr = store.prop[l];
+        if (!arr || arr.length < 2) return;
+        ctx.beginPath();
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = COLORS[l];
+        ctx.globalAlpha = 0.8;
+        for (let i = 0; i < N; i++) {
+          const x = xOf(i), y = yOf(arr[i]);
+          i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+        }
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      });
+    }
+
+    function drawFvChart(name, canvasId, dataKey) {
+      const store = seriesStore[name];
+      if (!store || store.t.length < 2) return;
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+
+      const dpr = window.devicePixelRatio || 1;
+      const cssW = canvas.clientWidth || 600;
+      const cssH = canvas.clientHeight || 180;
+      canvas.width = cssW * dpr;
+      canvas.height = cssH * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      ctx.fillStyle = '#0f1419';
+      ctx.fillRect(0, 0, cssW, cssH);
+
+      const pad = { l: 50, r: 12, t: 30, b: 24 };
+      const W = cssW - pad.l - pad.r;
+      const H = cssH - pad.t - pad.b;
+      const data = store[dataKey];
+
+      let maxV = dataKey === 'conf' ? 1 : 0;
+      if (dataKey === 'prop') {
+        LABELS.forEach(l => { if (data[l]?.length) maxV = Math.max(maxV, ...data[l]); });
+        maxV = Math.max(maxV, 0.01);
+      }
+
+      const t0 = store.t[0], t1 = store.t[store.t.length - 1];
+      const xOfT = t => pad.l + ((t - t0) / (t1 - t0 || 1)) * W;
+      const yOf = v => pad.t + H - (v / (maxV || 1)) * H;
+
+      // Grid
+      ctx.strokeStyle = '#242b33';
+      ctx.lineWidth = 1;
+      ctx.fillStyle = '#64748b';
+      ctx.font = '10px Inter, sans-serif';
+      const yTicks = dataKey === 'conf' ? [0, 0.25, 0.5, 0.75, 1] : [0, maxV * 0.25, maxV * 0.5, maxV * 0.75, maxV];
+      yTicks.forEach(v => {
+        const y = yOf(v);
+        ctx.beginPath();
+        ctx.moveTo(pad.l, y);
+        ctx.lineTo(pad.l + W, y);
+        ctx.stroke();
+        const txt = dataKey === 'conf' ? v.toFixed(2) : (v * 100).toFixed(1) + '%';
+        ctx.fillText(txt, 4, y + 4);
+      });
+
+      // Lines
+      LABELS.forEach(l => {
+        const arr = data[l];
+        if (!arr || arr.length < 2) return;
+        ctx.beginPath();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = COLORS[l];
+        for (let i = 0; i < arr.length; i++) {
+          const x = xOfT(store.t[i]), y = yOf(arr[i]);
+          i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+        }
+        ctx.stroke();
+      });
+
+      // Legend
+      let lx = pad.l;
+      ctx.font = '11px Inter, sans-serif';
+      LABELS.forEach(l => {
+        ctx.fillStyle = COLORS[l];
+        ctx.fillRect(lx, 8, 12, 4);
+        ctx.fillStyle = '#94a3b8';
+        ctx.fillText(LABEL_NAMES[l], lx + 16, 14);
+        lx += ctx.measureText(LABEL_NAMES[l]).width + 30;
+      });
+
+      // Time labels
+      ctx.fillStyle = '#64748b';
+      ctx.fillText(fmtTime(t0), pad.l, pad.t + H + 16);
+      ctx.fillText(fmtTime(t1), pad.l + W - 40, pad.t + H + 16);
+    }
+
+    /* ===== Log Panel ===== */
+    function toggleLog() {
+      const p = document.getElementById('logPanel');
+      const btn = document.getElementById('logToggleBtn');
+      if (p.style.display === 'block') {
+        p.style.display = 'none';
+        btn.textContent = '📋 顯示日誌';
+        clearInterval(logTimer);
+      } else {
+        p.style.display = 'block';
+        btn.textContent = '📋 隱藏日誌';
+        loadLog();
+        logTimer = setInterval(loadLog, 3000);
+      }
+    }
+
+    const loadLog = () => fetch(DATA_ROOT + 'logs/app.log?_t=' + Date.now())
+      .then(r => r.text())
+      .then(t => { document.getElementById('logContent').textContent = t; })
+      .catch(() => { });
+
+    /* ===== Helpers ===== */
+    function parseTs(ts) { if (!ts) return null; const d = new Date(ts.replace(' ', 'T')); return isNaN(d) ? null : d; }
+    function fmtTime(ms) { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; }
+    function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+
+    function makeDraggable(el, handle) {
+      let ox = 0, oy = 0, dragging = false;
+      handle.onmousedown = e => {
+        dragging = true;
+        const r = el.getBoundingClientRect();
+        ox = e.clientX - r.left;
+        oy = e.clientY - r.top;
+        el.style.transform = 'none';
+        el.style.left = r.left + 'px';
+        el.style.top = r.top + 'px';
+        e.preventDefault();
+      };
+      window.onmousemove = e => {
+        if (!dragging) return;
+        el.style.left = Math.max(0, e.clientX - ox) + 'px';
+        el.style.top = Math.max(0, e.clientY - oy) + 'px';
+      };
+      window.onmouseup = () => dragging = false;
+    }
+  </script>
+</body>
+
+</html>
