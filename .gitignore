@@ -7,7 +7,8 @@ __pycache__/
 
 # Logs and data
 logs/
-saved_images/
+saved_images/*
+!saved_images/demo/
 *.log
 
 # IDE and temp

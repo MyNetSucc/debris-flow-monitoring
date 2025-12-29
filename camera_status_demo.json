@@ -2,10 +2,14 @@
     "Demo Camera 1 - Taipei": {
         "alert": "green",
         "timestamp": "2025-12-29 22:30:00",
-        "imageUrl": "",
-        "rawUrl": "",
-        "history": [],
-        "historyRaw": [],
+        "imageUrl": "/saved_images/demo/placeholder.png",
+        "rawUrl": "/saved_images/demo/placeholder.png",
+        "history": [
+            "/saved_images/demo/placeholder.png"
+        ],
+        "historyRaw": [
+            "/saved_images/demo/placeholder.png"
+        ],
         "proportion": {
             "clear_water": 0.0234,
             "muddy_water": 0.0,
@@ -25,10 +29,14 @@
     "Demo Camera 2 - Wulai": {
         "alert": "yellow",
         "timestamp": "2025-12-29 22:28:15",
-        "imageUrl": "",
-        "rawUrl": "",
-        "history": [],
-        "historyRaw": [],
+        "imageUrl": "/saved_images/demo/placeholder.png",
+        "rawUrl": "/saved_images/demo/placeholder.png",
+        "history": [
+            "/saved_images/demo/placeholder.png"
+        ],
+        "historyRaw": [
+            "/saved_images/demo/placeholder.png"
+        ],
         "proportion": {
             "clear_water": 0.012,
             "muddy_water": 0.0456,
@@ -48,10 +56,14 @@
     "Demo Camera 3 - Hualien": {
         "alert": "red",
         "timestamp": "2025-12-29 22:25:00",
-        "imageUrl": "",
-        "rawUrl": "",
-        "history": [],
-        "historyRaw": [],
+        "imageUrl": "/saved_images/demo/placeholder.png",
+        "rawUrl": "/saved_images/demo/placeholder.png",
+        "history": [
+            "/saved_images/demo/placeholder.png"
+        ],
+        "historyRaw": [
+            "/saved_images/demo/placeholder.png"
+        ],
         "proportion": {
             "clear_water": 0.0,
             "muddy_water": 0.089,

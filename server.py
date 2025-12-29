@@ -60,14 +60,12 @@ async def health():
 @app.get("/cctv.json")
 async def get_cctv():
     """Get CCTV camera list"""
-    cctv_file = BASE_DIR / "cctv.json"
-    if cctv_file.exists():
-        with open(cctv_file, 'r', encoding='utf-8') as f:
-            return JSONResponse(content=json.load(f))
-    demo_file = BASE_DIR / "cctv_demo.json"
-    if demo_file.exists():
-        with open(demo_file, 'r', encoding='utf-8') as f:
-            return JSONResponse(content=json.load(f))
+    # Try full camera list first, then regular, then demo
+    for filename in ["cctv_full.json", "cctv.json", "cctv_demo.json"]:
+        filepath = BASE_DIR / filename
+        if filepath.exists():
+            with open(filepath, 'r', encoding='utf-8') as f:
+                return JSONResponse(content=json.load(f))
     return JSONResponse(content=[])
 
 @app.get("/camera_status.json")
