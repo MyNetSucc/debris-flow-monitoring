@@ -36,5 +36,4 @@ debris_offline_inference.py
 focus_server.py
 yolo11*.py
 plot_debris_alerts.m
-*.txt
 noCCD_2.jpg
