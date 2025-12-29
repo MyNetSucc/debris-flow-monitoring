@@ -5,16 +5,16 @@ Includes upload endpoints for syncing from local detection
 """
 import os
 import json
-import secrets
 import shutil
 from pathlib import Path
 from datetime import datetime
-from fastapi import FastAPI, HTTPException, Header, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, Header, UploadFile, File, Form, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="Debris Flow Monitoring API")
+# Create app
+app = FastAPI(title="Debris Flow Monitoring API", docs_url="/docs", redoc_url="/redoc")
 
 # CORS for cross-origin requests
 app.add_middleware(
@@ -37,7 +37,7 @@ API_KEY = os.environ.get("SYNC_API_KEY", "")
 # Ensure directories exist
 SAVED_IMAGES_DIR.mkdir(exist_ok=True)
 
-def verify_api_key(x_api_key: str = Header(None)):
+def verify_api_key(x_api_key: str):
     """Verify API key for protected endpoints"""
     if not API_KEY:
         raise HTTPException(status_code=500, detail="Server API key not configured")
@@ -45,13 +45,7 @@ def verify_api_key(x_api_key: str = Header(None)):
         raise HTTPException(status_code=401, detail="Invalid API key")
     return True
 
-@app.get("/")
-async def root():
-    """Serve the main web interface"""
-    index_file = WEB_GIS_DIR / "index.html"
-    if index_file.exists():
-        return FileResponse(index_file)
-    return {"message": "Debris Flow Monitoring API", "status": "running"}
+# ===================== API ENDPOINTS =====================
 
 @app.get("/api/status")
 async def get_status():
@@ -69,13 +63,11 @@ async def get_status():
 @app.get("/api/health")
 async def health():
     """Health check endpoint"""
-    return {"status": "healthy", "time": datetime.utcnow().isoformat()}
+    return {"status": "healthy", "time": datetime.utcnow().isoformat(), "api_key_set": bool(API_KEY)}
 
 @app.get("/api/cctv")
-@app.get("/cctv.json")
 async def get_cctv():
     """Get CCTV camera list"""
-    # Try full camera list first, then regular, then demo
     for filename in ["cctv_full.json", "cctv.json", "cctv_demo.json"]:
         filepath = BASE_DIR / filename
         if filepath.exists():
@@ -83,16 +75,23 @@ async def get_cctv():
                 return JSONResponse(content=json.load(f))
     return JSONResponse(content=[])
 
+# ===================== COMPATIBILITY ENDPOINTS =====================
+
+@app.get("/cctv.json")
+async def get_cctv_compat():
+    """Direct path for cctv.json (for frontend compatibility)"""
+    return await get_cctv()
+
 @app.get("/camera_status.json")
-async def get_status_direct():
+async def get_status_compat():
     """Direct path for camera_status.json (for frontend compatibility)"""
     return await get_status()
 
-# ===================== UPLOAD ENDPOINTS =====================
+# ===================== SYNC ENDPOINTS =====================
 
 @app.post("/api/sync/status")
 async def upload_status(
-    x_api_key: str = Header(...),
+    x_api_key: str = Header(..., alias="X-API-Key"),
     status_data: str = Form(...)
 ):
     """Upload camera status JSON from local detection"""
@@ -107,7 +106,7 @@ async def upload_status(
 
 @app.post("/api/sync/image")
 async def upload_image(
-    x_api_key: str = Header(...),
+    x_api_key: str = Header(..., alias="X-API-Key"),
     camera: str = Form(...),
     filename: str = Form(...),
     image: UploadFile = File(...)
@@ -130,47 +129,27 @@ async def upload_image(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/sync/batch")
-async def upload_batch(
-    x_api_key: str = Header(...),
-    status_data: str = Form(...),
-    images: list[UploadFile] = File(default=[])
-):
-    """Batch upload: camera status + multiple images"""
-    verify_api_key(x_api_key)
-    try:
-        # Save status
-        data = json.loads(status_data)
-        with open(CAMERA_STATUS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        
-        # Save images (filename format: camera_name__actual_filename.jpg)
-        saved_images = []
-        for img in images:
-            if '__' in img.filename:
-                cam, fname = img.filename.split('__', 1)
-                cam_dir = SAVED_IMAGES_DIR / cam
-                cam_dir.mkdir(parents=True, exist_ok=True)
-                file_path = cam_dir / fname
-                with open(file_path, 'wb') as f:
-                    shutil.copyfileobj(img.file, f)
-                saved_images.append(f"/saved_images/{cam}/{fname}")
-        
-        return {
-            "success": True,
-            "cameras": len(data),
-            "images_saved": len(saved_images),
-            "time": datetime.utcnow().isoformat()
-        }
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid JSON")
+# ===================== STATIC FILE ROUTES =====================
 
-# Mount static directories
+@app.get("/")
+async def root():
+    """Serve the main web interface"""
+    index_file = WEB_GIS_DIR / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file, media_type="text/html")
+    return JSONResponse(content={"message": "Debris Flow Monitoring API", "status": "running"})
+
+# Mount static directories - MUST be after all API routes
 if WEB_GIS_DIR.exists():
     app.mount("/web_gis", StaticFiles(directory=str(WEB_GIS_DIR), html=True), name="web_gis")
 
 if SAVED_IMAGES_DIR.exists():
     app.mount("/saved_images", StaticFiles(directory=str(SAVED_IMAGES_DIR)), name="saved_images")
+
+# Mount demo images
+demo_dir = SAVED_IMAGES_DIR / "demo"
+if demo_dir.exists():
+    pass  # Already covered by saved_images mount
 
 if __name__ == "__main__":
     import uvicorn

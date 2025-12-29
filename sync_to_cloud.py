@@ -14,7 +14,7 @@ from watchdog.events import FileSystemEventHandler
 # ============ CONFIGURATION ============
 # Set these or use environment variables
 RENDER_URL = os.environ.get("RENDER_URL", "https://debris-flow-monitor.onrender.com")
-API_KEY = os.environ.get("SYNC_API_KEY", "YOUR_API_KEY_HERE")  # Set this!
+API_KEY = os.environ.get("SYNC_API_KEY", "jDYu96zua76zAQ2USgbFDMkicCnlUiAJzfk8xG_HdeI")  # Set this!
 
 # Local paths
 SCRIPT_DIR = Path(__file__).parent.resolve()
