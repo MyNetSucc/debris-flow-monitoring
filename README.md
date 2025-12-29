@@ -4,7 +4,7 @@ Real-time debris flow detection and monitoring dashboard using CCTV cameras acro
 
 ## 🔗 Live Demo
 
-**[View Dashboard](https://mynetsucc.github.io/debris-flow-monitoring/web_gis/)**
+**[View Dashboard](https://debris-flow-monitor.onrender.com/web_gis/)**
 
 ## Features
 
@@ -18,4 +18,20 @@ Real-time debris flow detection and monitoring dashboard using CCTV cameras acro
 
 - OpenLayers for mapping
 - YOLO11 for debris flow detection
+- FastAPI backend
 - Vanilla JS/CSS with glassmorphism design
+
+## Deploy Your Own
+
+### Option 1: Render.com (Recommended)
+1. Fork this repository
+2. Connect to [Render.com](https://render.com)
+3. Create new Web Service from your repo
+4. Render will auto-detect `render.yaml`
+
+### Option 2: Local Development
+```bash
+pip install -r requirements.txt
+python server.py
+# Open http://localhost:8000/web_gis/
+```

@@ -1,10 +1,40 @@
-# Exclude everything by default
-*
+# Model files (too large for GitHub)
+*.pt
 
-# Include only web_gis folder
-!web_gis/
-!web_gis/**
+# Python cache
+__pycache__/
+*.pyc
 
-# Include gitignore and readme
-!.gitignore
-!README.md
+# Logs and data
+logs/
+saved_images/
+*.log
+
+# IDE and temp
+.vscode/
+test_folder/
+chromedriver-win64/
+
+# Private data files (exclude from git, not from editing)
+cctv.json
+camera_status.json
+.env
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Old files
+old/
+
+# Python detection scripts (only for local use)
+*_V*.PY
+*_V*.py
+capture_*.py
+capture_*.PY
+debris_offline_inference.py
+focus_server.py
+yolo11*.py
+plot_debris_alerts.m
+*.txt
+noCCD_2.jpg
