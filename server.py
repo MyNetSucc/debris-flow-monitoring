@@ -56,6 +56,25 @@ async def health():
     """Health check endpoint"""
     return {"status": "healthy"}
 
+@app.get("/api/cctv")
+@app.get("/cctv.json")
+async def get_cctv():
+    """Get CCTV camera list"""
+    cctv_file = BASE_DIR / "cctv.json"
+    if cctv_file.exists():
+        with open(cctv_file, 'r', encoding='utf-8') as f:
+            return JSONResponse(content=json.load(f))
+    demo_file = BASE_DIR / "cctv_demo.json"
+    if demo_file.exists():
+        with open(demo_file, 'r', encoding='utf-8') as f:
+            return JSONResponse(content=json.load(f))
+    return JSONResponse(content=[])
+
+@app.get("/camera_status.json")
+async def get_status_direct():
+    """Direct path for camera_status.json (for frontend compatibility)"""
+    return await get_status()
+
 # Mount static directories
 if WEB_GIS_DIR.exists():
     app.mount("/web_gis", StaticFiles(directory=str(WEB_GIS_DIR), html=True), name="web_gis")
