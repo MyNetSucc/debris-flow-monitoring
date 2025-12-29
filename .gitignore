@@ -1,33 +1,10 @@
-# Model files (too large for GitHub)
-*.pt
+# Exclude everything by default
+*
 
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-.env
-.venv
-env/
-venv/
+# Include only web_gis folder
+!web_gis/
+!web_gis/**
 
-# Logs and saved images
-logs/
-saved_images/
-*.log
-
-# IDE
-.vscode/
-.idea/
-
-# Temp
-*.tmp
-test_folder/
-
-# ChromeDriver
-chromedriver-win64/
-
-# OS
-Thumbs.db
-.DS_Store
+# Include gitignore and readme
+!.gitignore
+!README.md
