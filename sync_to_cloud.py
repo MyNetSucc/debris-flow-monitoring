@@ -239,13 +239,22 @@ def sync_image(cam_name: str, filename: str, filepath: Path) -> bool:
     
     return False
 
+# ============ THREAD POOL ============
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# Create a thread pool for parallel uploads
+executor = ThreadPoolExecutor(max_workers=8)
+
 def sync_recent_images() -> int:
-    """Sync the LATEST image from each camera folder"""
+    """Sync the LATEST image from each camera folder in PARALLEL"""
     if not SAVED_IMAGES_DIR.exists():
         return 0
     
     synced = 0
     total_cams = 0
+    
+    # Collect all upload tasks
+    upload_tasks = []
     
     for cam_dir in SAVED_IMAGES_DIR.iterdir():
         if not cam_dir.is_dir() or cam_dir.name == 'demo':
@@ -261,11 +270,22 @@ def sync_recent_images() -> int:
         
         latest_file = max(jpg_files, key=lambda f: f.stat().st_mtime)
         
-        if sync_image(cam_name, latest_file.name, latest_file):
-            synced += 1
+        # Submit task to executor
+        upload_tasks.append(
+            executor.submit(sync_image, cam_name, latest_file.name, latest_file)
+        )
+    
+    # Process results as they complete
+    if upload_tasks:
+        for future in as_completed(upload_tasks):
+            try:
+                if future.result():
+                    synced += 1
+            except Exception as e:
+                print(f"[SYNC] Parallel task error: {e}")
     
     if synced > 0:
-        print(f"[SYNC] Images: {synced}/{total_cams} cameras | {stats.summary()}")
+        print(f"[SYNC] Images: {synced}/{total_cams} cameras (Parallel) | {stats.summary()}")
     
     return synced
 
