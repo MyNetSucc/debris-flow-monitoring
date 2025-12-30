@@ -883,19 +883,44 @@
 
       /* Floating viewer - full screen on mobile */
       #floating-viewer {
-        width: 96vw !important;
-        height: 92dvh !important;
-        left: 2vw !important;
-        top: 4dvh !important;
-        max-width: none;
+        position: fixed !important;
+        left: 0 !important;
+        top: 0 !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        height: 100dvh !important;
+        max-width: none !important;
+        max-height: none !important;
+        transform: none !important;
+        border-radius: 0 !important;
+        margin: 0 !important;
+        overflow-y: auto;
+      }
+
+      .fv-header {
+        position: sticky;
+        top: 0;
+        z-index: 10;
       }
 
       .fv-image-wrap {
-        height: clamp(150px, 30vh, 250px);
+        height: clamp(150px, 35vh, 280px);
       }
 
       .fv-charts {
         flex-direction: column;
+        max-height: none;
+        padding: 12px;
+      }
+
+      .fv-chart-section {
+        padding: 10px;
+      }
+
+      .fv-info {
+        padding: 12px;
       }
     }
 
