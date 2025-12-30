@@ -566,7 +566,8 @@
       color: var(--accent-blue);
     }
 
-    .fv-close {
+    .fv-close,
+    .fv-newtab {
       background: transparent;
       border: none;
       color: var(--text-muted);
@@ -579,6 +580,11 @@
 
     .fv-close:hover {
       background: var(--alert-red);
+      color: white;
+    }
+
+    .fv-newtab:hover {
+      background: var(--accent-blue);
       color: white;
     }
 
@@ -1102,6 +1108,7 @@
   <div id="floating-viewer">
     <div class="fv-header" id="fv-header">
       <span class="fv-title" id="fv-title"></span>
+      <button class="fv-newtab" id="fv-newtab" title="在新分頁開啟">⧉</button>
       <button class="fv-close" id="fv-close" title="關閉 (Esc)">✕</button>
     </div>
     <div class="fv-image-wrap" id="fv-wrap">
@@ -1186,6 +1193,11 @@
 
       document.getElementById('logToggleBtn').onclick = toggleLog;
       document.getElementById('fv-close').onclick = closeFloating;
+      document.getElementById('fv-newtab').onclick = () => {
+        if (FV.cam) {
+          window.open('/web_gis/viewer.html?cam=' + encodeURIComponent(FV.cam), '_blank');
+        }
+      };
       document.getElementById('fv-prev').onclick = () => fvShowIndex(FV.idx - 1);
       document.getElementById('fv-next').onclick = () => fvShowIndex(FV.idx + 1);
 
