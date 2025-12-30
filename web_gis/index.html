@@ -73,6 +73,43 @@
       display: flex;
       flex-direction: column;
       overflow: hidden;
+      position: relative;
+    }
+
+    /* Resize handle */
+    #resize-handle {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 6px;
+      height: 100%;
+      cursor: ew-resize;
+      background: transparent;
+      z-index: 100;
+      transition: background 0.2s;
+    }
+
+    #resize-handle:hover,
+    #resize-handle.dragging {
+      background: var(--accent-blue);
+    }
+
+    #resize-handle::before {
+      content: '';
+      position: absolute;
+      left: 2px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 2px;
+      height: 40px;
+      background: var(--text-muted);
+      border-radius: 2px;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    #resize-handle:hover::before {
+      opacity: 1;
     }
 
     /* === Sidebar Header === */
@@ -1155,6 +1192,7 @@
     </div>
 
     <div id="sidebar">
+      <div id="resize-handle"></div>
       <div class="sidebar-header">
         <h1>🌊 土石流監測系統</h1>
         <p>Debris Flow Monitoring System</p>
@@ -1289,7 +1327,43 @@
       });
 
       makeDraggable(document.getElementById('floating-viewer'), document.getElementById('fv-header'));
+
+      // Initialize sidebar resize
+      initSidebarResize();
     };
+
+    /* ===== Sidebar Resize ===== */
+    function initSidebarResize() {
+      const handle = document.getElementById('resize-handle');
+      const sidebar = document.getElementById('sidebar');
+      let resizing = false;
+
+      handle.addEventListener('mousedown', (e) => {
+        resizing = true;
+        handle.classList.add('dragging');
+        document.body.style.cursor = 'ew-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+      });
+
+      document.addEventListener('mousemove', (e) => {
+        if (!resizing) return;
+        const containerWidth = document.querySelector('.container').offsetWidth;
+        const newWidth = containerWidth - e.clientX;
+        // Clamp between 280px and 60% of container
+        const clampedWidth = Math.max(280, Math.min(newWidth, containerWidth * 0.6));
+        sidebar.style.width = clampedWidth + 'px';
+      });
+
+      document.addEventListener('mouseup', () => {
+        if (resizing) {
+          resizing = false;
+          handle.classList.remove('dragging');
+          document.body.style.cursor = '';
+          document.body.style.userSelect = '';
+        }
+      });
+    }
 
     /* ===== Map ===== */
     function initMap() {
@@ -1843,14 +1917,40 @@
         p.style.display = 'block';
         btn.textContent = '📋 隱藏日誌';
         loadLog();
-        logTimer = setInterval(loadLog, 3000);
+        logTimer = setInterval(loadLog, 5000);
       }
     }
 
-    const loadLog = () => fetch(DATA_ROOT + 'logs/app.log?_t=' + Date.now())
-      .then(r => r.text())
-      .then(t => { document.getElementById('logContent').textContent = t; })
-      .catch(() => { });
+    async function loadLog() {
+      const logEl = document.getElementById('logContent');
+      try {
+        // Fetch server stats
+        const statsRes = await fetch('/api/stats?_t=' + Date.now());
+        const stats = await statsRes.json();
+
+        // Fetch health
+        const healthRes = await fetch('/api/health?_t=' + Date.now());
+        const health = await healthRes.json();
+
+        const text = `=== 伺服器狀態 ===
+狀態: ${health.status || '未知'}
+時間: ${health.time || '-'}
+攝影機數量: ${health.cameras || 0}
+影像資料夾: ${health.image_folders || 0}
+API金鑰: ${health.api_key_set ? '已設定 ✓' : '未設定 ✗'}
+
+=== 同步統計 ===
+狀態上傳次數: ${stats.status_uploads || 0}
+影像上傳次數: ${stats.image_uploads || 0}
+錯誤次數: ${stats.errors || 0}
+最後同步: ${stats.last_sync || '尚未同步'}
+啟動時間: ${stats.start_time || '-'}`;
+
+        logEl.textContent = text;
+      } catch (err) {
+        logEl.textContent = '無法載入伺服器資訊\n錯誤: ' + err.message;
+      }
+    }
 
     /* ===== Helpers ===== */
     function parseTs(ts) { if (!ts) return null; const d = new Date(ts.replace(' ', 'T')); return isNaN(d) ? null : d; }
