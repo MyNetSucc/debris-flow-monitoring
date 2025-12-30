@@ -448,6 +448,61 @@
       transform: scale(1.02);
     }
 
+    /* Image status indicators */
+    .img-status {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    .img-status.loading .status-icon {
+      width: 24px;
+      height: 24px;
+      border: 3px solid var(--border-color);
+      border-top-color: var(--accent-blue);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    .img-status.unavailable .status-icon {
+      font-size: 24px;
+      color: var(--alert-red);
+    }
+
+    .img-status .status-text {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      background: rgba(0, 0, 0, 0.6);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .img-status.loading .status-text {
+      color: var(--accent-blue);
+    }
+
+    .img-status.unavailable .status-text {
+      color: var(--alert-red);
+    }
+
+    @keyframes spin {
+      to {
+        transform: translate(-50%, -50%) rotate(360deg);
+      }
+    }
+
+    .cam-thumb.loaded .img-status,
+    .cam-thumb.has-image .img-status.loading {
+      display: none;
+    }
+
     .cam-stats {
       flex: 1;
       min-width: 0;
@@ -1429,6 +1484,10 @@
     ${reason ? `<div class="cam-reason">⚠ ${reason}</div>` : ''}
     <div class="cam-content">
       <div class="cam-thumb" data-cam="${name}">
+        <div class="img-status loading">
+          <div class="status-icon"></div>
+          <span class="status-text">載入中</span>
+        </div>
         <img class="thumb-a" loading="lazy" alt="">
         <img class="thumb-b" loading="lazy" alt="">
       </div>
@@ -1457,10 +1516,33 @@
       };
       card.querySelector('.cam-thumb').onclick = () => openFloating(name);
 
-      // Prime thumb
+      // Prime thumb with load handlers
       const buf = thumbBuf[name];
+      const thumbWrap = card.querySelector('.cam-thumb');
       const thumbA = card.querySelector('.thumb-a');
-      if (buf?.list?.[0]) thumbA.src = buf.list[0];
+      const statusEl = card.querySelector('.img-status');
+
+      // Image load handlers
+      thumbA.onload = () => {
+        thumbWrap.classList.add('loaded');
+        statusEl.classList.remove('loading', 'unavailable');
+      };
+      thumbA.onerror = () => {
+        if (thumbA.src) {
+          statusEl.classList.remove('loading');
+          statusEl.classList.add('unavailable');
+          statusEl.innerHTML = '<span class="status-icon">⚠</span><span class="status-text">無法載入</span>';
+        }
+      };
+
+      if (buf?.list?.[0]) {
+        thumbA.src = buf.list[0];
+      } else {
+        // No image available
+        statusEl.classList.remove('loading');
+        statusEl.classList.add('unavailable');
+        statusEl.innerHTML = '<span class="status-icon">📷</span><span class="status-text">尚無影像</span>';
+      }
 
       // Draw spark
       setTimeout(() => drawItemSpark(name, card.querySelector('.spark')), 50);
