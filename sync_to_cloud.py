@@ -24,7 +24,7 @@ SAVED_IMAGES_DIR = SCRIPT_DIR / "saved_images"
 # Sync settings
 SYNC_INTERVAL = 5  # seconds between status syncs
 SYNC_IMAGES = True  # Whether to sync images (uses bandwidth)
-MAX_IMAGE_AGE = 60  # Only sync images newer than this (seconds)
+MAX_IMAGE_AGE = 300  # Only sync images newer than this (seconds)
 
 # ============ SYNC FUNCTIONS ============
 
@@ -96,11 +96,10 @@ def sync_image(cam_name: str, filename: str, filepath: Path):
         return False
 
 def sync_recent_images():
-    """Sync images modified in the last MAX_IMAGE_AGE seconds"""
+    """Sync the LATEST image from each camera folder"""
     if not SAVED_IMAGES_DIR.exists():
         return
     
-    now = time.time()
     synced = 0
     
     for cam_dir in SAVED_IMAGES_DIR.iterdir():
@@ -108,14 +107,19 @@ def sync_recent_images():
             continue
         cam_name = cam_dir.name
         
-        for img_file in cam_dir.glob("*.jpg"):
-            age = now - img_file.stat().st_mtime
-            if age < MAX_IMAGE_AGE:
-                if sync_image(cam_name, img_file.name, img_file):
-                    synced += 1
+        # Find the most recent image in this camera folder
+        jpg_files = list(cam_dir.glob("*.jpg"))
+        if not jpg_files:
+            continue
+            
+        # Sort by modification time, get the newest
+        latest_file = max(jpg_files, key=lambda f: f.stat().st_mtime)
+        
+        if sync_image(cam_name, latest_file.name, latest_file):
+            synced += 1
     
     if synced > 0:
-        print(f"[SYNC] Synced {synced} recent images")
+        print(f"[SYNC] Synced {synced} latest images (one per camera)")
 
 # ============ FILE WATCHER ============
 
@@ -129,9 +133,10 @@ class StatusFileHandler(FileSystemEventHandler):
             now = time.time()
             if now - self.last_sync > 2:  # Debounce
                 self.last_sync = now
-                sync_status()
+                # Upload images FIRST, then status (so images exist when browser loads URLs)
                 if SYNC_IMAGES:
                     sync_recent_images()
+                sync_status()
 
 # ============ MAIN ============
 
