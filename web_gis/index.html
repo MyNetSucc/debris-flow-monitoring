@@ -1208,10 +1208,7 @@
           <label class="filter-btn active" id="fGreenBtn"><input type="checkbox" id="fGreen" checked><span
               class="filter-dot green"></span>綠</label>
         </div>
-        <div class="toggle-wrap">
-          <span>原圖</span>
-          <div id="showRawToggle" class="toggle"></div>
-        </div>
+
       </div>
 
       <div class="camera-list" id="cameraList">
@@ -1302,12 +1299,7 @@
         });
       });
 
-      document.getElementById('showRawToggle').onclick = function () {
-        this.classList.toggle('active');
-        SHOW_RAW = this.classList.contains('active');
-        refreshAll();
-        if (FV.open && FV.cam) openFloating(FV.cam);
-      };
+
 
       document.getElementById('logToggleBtn').onclick = toggleLog;
       document.getElementById('fv-close').onclick = closeFloating;
