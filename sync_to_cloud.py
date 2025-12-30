@@ -13,7 +13,7 @@ from watchdog.events import FileSystemEventHandler
 
 # ============ CONFIGURATION ============
 # Set these or use environment variables
-RENDER_URL = os.environ.get("RENDER_URL", "https://debris-flow-monitor.onrender.com")
+RENDER_URL = os.environ.get("RENDER_URL", "https://debris-flow-monitoring.onrender.com")
 API_KEY = os.environ.get("SYNC_API_KEY", "jDYu96zua76zAQ2USgbFDMkicCnlUiAJzfk8xG_HdeI")  # Set this!
 
 # Local paths
@@ -38,11 +38,22 @@ def sync_status():
         with open(CAMERA_STATUS_FILE, 'r', encoding='utf-8') as f:
             data = json.load(f)
         
-        # Rewrite image URLs to point to cloud server
+        # Rewrite image URLs from localhost to relative paths
         for cam, info in data.items():
-            if 'imageUrl' in info and info['imageUrl']:
-                # Keep relative path, cloud server will serve from its saved_images
-                pass  # URLs are already relative like /saved_images/cam/file.jpg
+            for key in ['imageUrl', 'rawUrl']:
+                if key in info and info[key]:
+                    url = info[key]
+                    # Convert http://127.0.0.1:8000/saved_images/... to /saved_images/...
+                    if '/saved_images/' in url:
+                        info[key] = '/saved_images/' + url.split('/saved_images/', 1)[1]
+            # Also fix history URLs
+            for key in ['history', 'historyRaw']:
+                if key in info and isinstance(info[key], list):
+                    info[key] = [
+                        '/saved_images/' + u.split('/saved_images/', 1)[1] 
+                        if '/saved_images/' in u else u 
+                        for u in info[key]
+                    ]
         
         response = requests.post(
             f"{RENDER_URL}/api/sync/status",
