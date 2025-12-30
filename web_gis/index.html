@@ -682,6 +682,55 @@
       color: white;
     }
 
+    .fv-controls {
+      padding: 10px 20px;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+
+    .fv-timelabel {
+      font-family: 'Roboto Mono', monospace;
+      font-size: 0.9rem;
+      color: var(--text-primary);
+      min-width: 150px;
+      font-weight: 500;
+    }
+
+    .fv-slider {
+      flex: 1;
+      height: 6px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: var(--border-color);
+      border-radius: 3px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .fv-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      background: var(--accent-blue);
+      border-radius: 50%;
+      transition: transform 0.1s;
+    }
+
+    .fv-slider::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+    }
+
+    .fv-counter {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      min-width: 60px;
+      text-align: right;
+    }
+
     .fv-image-wrap {
       position: relative;
       height: 480px;
@@ -1229,10 +1278,14 @@
       <button class="fv-close" id="fv-close" title="關閉 (Esc)">✕</button>
     </div>
     <div class="fv-image-wrap" id="fv-wrap">
-      <div class="fv-counter" id="fv-count">0 / 0</div>
       <img id="fv-img-a" alt="影像"><img id="fv-img-b" alt="">
       <button class="fv-nav prev" id="fv-prev">‹</button>
       <button class="fv-nav next" id="fv-next">›</button>
+    </div>
+    <div class="fv-controls">
+      <div id="fv-timelabel" class="fv-timelabel">Checking...</div>
+      <input type="range" id="fv-timeline" class="fv-slider" min="0" max="1" value="0" step="1">
+      <div class="fv-counter" id="fv-count">0 / 0</div>
     </div>
     <div class="fv-charts">
       <div class="fv-chart-section">
@@ -1649,6 +1702,18 @@
       }
     }
 
+    /* ===== Helper: Parse Timestamp from URL ===== */
+    function parseTs(url) {
+      if (!url) return '--';
+      // Match ..._YYYYMMDD_HHMMSS_...
+      const m = url.match(/_(\d{8})_(\d{6})_/);
+      if (m) {
+        const d = m[1], t = m[2];
+        return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)} ${t.slice(0, 2)}:${t.slice(2, 4)}:${t.slice(4, 6)}`;
+      }
+      return '--';
+    }
+
     /* ===== Floating Viewer ===== */
     function openFloating(cam) {
       const fv = document.getElementById('floating-viewer');
@@ -1665,6 +1730,17 @@
 
       const s0 = currentStatus[cam] || {};
       FV.seq = buildSeq(s0);
+
+      // Init Slider
+      const slider = document.getElementById('fv-timeline');
+      slider.max = Math.max(0, FV.seq.length - 1);
+      slider.value = 0;
+      slider.oninput = function () {
+        // Stop auto-play on interaction
+        clearInterval(fvSlide);
+        fvShowIndex(parseInt(this.value));
+      };
+
       FV.idx = 0;
       fvShowIndex(0);
       CHART.forCam = cam;
@@ -1729,6 +1805,10 @@
       const n = FV.seq.length;
       FV.idx = ((nextIdx % n) + n) % n;
       const src = FV.seq[FV.idx];
+
+      // Sync slider and label
+      document.getElementById('fv-timeline').value = FV.idx;
+      document.getElementById('fv-timelabel').textContent = parseTs(src);
 
       const A = document.getElementById('fv-img-a');
       const B = document.getElementById('fv-img-b');

@@ -27,9 +27,25 @@ except ImportError:
     WATCHDOG_AVAILABLE = False
     print("[WARN] watchdog not installed - file watching disabled")
 
-# ============ CONFIGURATION ============
+# Load .env or secrets.env manually for local development
+for env_file in [".env", "secrets.env"]:
+    env_path = Path(__file__).parent / env_file
+    if env_path.exists():
+        try:
+            with open(env_path, "r") as f:
+                for line in f:
+                    if "=" in line and not line.strip().startswith("#"):
+                        key, val = line.strip().split("=", 1)
+                        if key not in os.environ:
+                            os.environ[key] = val
+        except Exception as e:
+            print(f"[WARN] Failed to load {env_file}: {e}")
+
 RENDER_URL = os.environ.get("RENDER_URL", "https://debris-flow-monitoring.onrender.com")
-API_KEY = os.environ.get("SYNC_API_KEY", "jDYu96zua76zAQ2USgbFDMkicCnlUiAJzfk8xG_HdeI")
+API_KEY = os.environ.get("SYNC_API_KEY")
+
+if not API_KEY:
+    print("[WARN] SYNC_API_KEY not found in environment or .env")
 
 # Local paths
 SCRIPT_DIR = Path(__file__).parent.resolve()

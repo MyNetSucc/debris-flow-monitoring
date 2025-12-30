@@ -20,6 +20,7 @@ chromedriver-win64/
 cctv.json
 camera_status.json
 .env
+secrets.env
 
 # OS
 Thumbs.db
@@ -28,7 +29,7 @@ Thumbs.db
 # Old files
 old/
 
-# Python detection scripts (only for local use)
+# Python detection scripts
 *_V*.PY
 *_V*.py
 capture_*.py
