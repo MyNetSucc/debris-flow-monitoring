@@ -2,28 +2,45 @@
 #
 # requirements.txt covers only the FastAPI dashboard that Render deploys; it
 # deliberately excludes these because the cloud service never runs inference.
-# Install this file on the machine that runs the detector / offline inference:
 #
 #   pip install -r requirements-detector.txt
 #
-# Versions below are the ones this pipeline is currently verified against.
+# ---------------------------------------------------------------------------
+# DO NOT pin torch here, and do not let pip install it as a side effect.
+#
+# torch/torchvision must match the CUDA runtime on the machine. The wheels on
+# PyPI are frequently CPU-only, so a plain `pip install torch` can silently
+# replace a working GPU build with one where torch.cuda.is_available() is
+# False, and desync torchvision at the same time. Install it deliberately for
+# your CUDA version, e.g.:
+#
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+#
+# Verify afterwards:
+#   python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+#
+# Known-good on this machine (conda env "yolo-ultra", RTX 3080 Ti):
+#   torch 2.5.1 + torchvision 0.20.1, CUDA 12.1
+# ---------------------------------------------------------------------------
 
-# --- YOLO11 inference ---
-ultralytics==8.3.174
-opencv-python==4.12.0.88
-numpy==2.1.3
-torch==2.10.0
+# Lower bounds only, so installing this never downgrades a working environment.
+
+# --- YOLO11 inference (torch is a dependency of ultralytics - see note above) ---
+ultralytics>=8.3.0
+opencv-python>=4.10
+numpy>=2.0
 
 # --- CCTV page scraping (yolo11m_seg_detectfromcctv_V3.PY) ---
 # selenium >=4.6 is required: create_driver() falls back to Selenium Manager to
-# auto-resolve a chromedriver matching the installed Chrome. The bundled
-# chromedriver-win64/ goes stale every time Chrome auto-updates.
-selenium>=4.6,==4.34.2
-requests==2.32.3
-urllib3==2.5.0
+# auto-resolve a chromedriver matching the installed Chrome, so no driver needs
+# to be checked in. Chrome auto-updates; a pinned driver goes stale and used to
+# kill every worker thread at startup.
+selenium>=4.6
+requests>=2.31
+urllib3>=2.0
 
 # --- cloud sync (sync_to_cloud.py) ---
-watchdog==4.0.2
+watchdog>=4.0
 
 # --- offline inference (debris_offline_inference.py) ---
-tqdm==4.67.1
+tqdm>=4.66
