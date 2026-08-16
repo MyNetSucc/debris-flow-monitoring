@@ -1,0 +1,29 @@
+# Local detection pipeline dependencies.
+#
+# requirements.txt covers only the FastAPI dashboard that Render deploys; it
+# deliberately excludes these because the cloud service never runs inference.
+# Install this file on the machine that runs the detector / offline inference:
+#
+#   pip install -r requirements-detector.txt
+#
+# Versions below are the ones this pipeline is currently verified against.
+
+# --- YOLO11 inference ---
+ultralytics==8.3.174
+opencv-python==4.12.0.88
+numpy==2.1.3
+torch==2.10.0
+
+# --- CCTV page scraping (yolo11m_seg_detectfromcctv_V3.PY) ---
+# selenium >=4.6 is required: create_driver() falls back to Selenium Manager to
+# auto-resolve a chromedriver matching the installed Chrome. The bundled
+# chromedriver-win64/ goes stale every time Chrome auto-updates.
+selenium>=4.6,==4.34.2
+requests==2.32.3
+urllib3==2.5.0
+
+# --- cloud sync (sync_to_cloud.py) ---
+watchdog==4.0.2
+
+# --- offline inference (debris_offline_inference.py) ---
+tqdm==4.67.1

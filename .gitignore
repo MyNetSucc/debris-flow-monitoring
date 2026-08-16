@@ -1,0 +1,49 @@
+# Model files (too large for GitHub; keep locally in weights/)
+*.pt
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Logs and data
+logs/
+saved_images/*
+!saved_images/demo/
+*.log
+
+# IDE and temp
+.vscode/
+test_folder/
+chromedriver-win64/
+
+# Private data files (exclude from git, not from editing)
+cctv.json
+cctv_full.json
+camera_status.json
+camera_status.json.tmp
+camera_status.json.bak
+.env
+secrets.env
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Old files
+old/
+
+# Python detection scripts
+*_V*.PY
+*_V*.py
+capture_*.py
+capture_*.PY
+debris_offline_inference.py
+focus_server.py
+yolo11*.py
+plot_debris_alerts.m
+noCCD_2.jpg
+
+# ...except the live detector. It holds the alert logic the whole system depends
+# on, and the blanket rules above left it with no history or backup at all.
+# (Negations must follow the patterns they override.)
+!yolo11m_seg_detectfromcctv_V3.PY
