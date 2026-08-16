@@ -1,0 +1,1972 @@
+<!DOCTYPE html>
+<html lang="zh-TW" data-theme="dark" data-zoom="md">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>土石流監測值班台 | Debris Flow Operations Console</title>
+  <meta name="description" content="土石流即時監測值班監控台 — 警報優先、相機健康度、事件時間軸">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+TC:wght@400;500;700;900&family=JetBrains+Mono:wght@400;600&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@latest/dist/ol.css">
+  <script src="https://cdn.jsdelivr.net/npm/ol@latest/dist/ol.js"></script>
+
+  <style>
+    /* ============================================================
+       Design tokens
+       Dark is the default: this board is meant to sit on a wall in a
+       duty room. Light exists for daylight glare and is a pure token
+       swap so nothing else in the sheet needs to know about it.
+       ============================================================ */
+    :root {
+      --bg-0: #0b0e13;
+      --bg-1: #121722;
+      --bg-2: #1a2130;
+      --bg-3: #232c3d;
+      --bg-hover: #2a3547;
+      --line: rgba(148, 163, 184, .16);
+      --line-strong: rgba(148, 163, 184, .32);
+
+      --fg-0: #f8fafc;
+      --fg-1: #cbd5e1;
+      --fg-2: #94a3b8;
+      --fg-3: #64748b;
+
+      --accent: #38bdf8;
+      --accent-dim: rgba(56, 189, 248, .16);
+
+      /* Alert semantics. Kept as the domain's red/yellow/green, but
+         tuned for contrast on a dark ground and always paired with an
+         icon + text so colour is never the only signal. */
+      --red: #ff4d4f;
+      --red-dim: rgba(255, 77, 79, .16);
+      --red-glow: rgba(255, 77, 79, .45);
+      --yellow: #fbbf24;
+      --yellow-dim: rgba(251, 191, 36, .16);
+      --green: #22c55e;
+      --green-dim: rgba(34, 197, 94, .14);
+      --gray: #7c8aa0;
+      --gray-dim: rgba(124, 138, 160, .16);
+
+      /* Detection classes */
+      --c-clear: #38bdf8;
+      --c-muddy: #fbbf24;
+      --c-debris: #ff4d4f;
+      --c-rock: #a78bfa;
+
+      --radius: 10px;
+      --radius-lg: 14px;
+      --header-h: 4.2rem;
+      --col-queue: 23rem;
+      --col-detail: 27rem;
+      --feed-h: 13rem;
+      --tile: 15rem;
+      --shadow: 0 12px 32px rgba(0, 0, 0, .45);
+      --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    :root[data-theme="light"] {
+      --bg-0: #eef1f6;
+      --bg-1: #ffffff;
+      --bg-2: #f4f6fa;
+      --bg-3: #e6eaf1;
+      --bg-hover: #dde3ec;
+      --line: rgba(15, 23, 42, .12);
+      --line-strong: rgba(15, 23, 42, .25);
+      --fg-0: #0f172a;
+      --fg-1: #334155;
+      --fg-2: #64748b;
+      --fg-3: #94a3b8;
+      --accent: #0284c7;
+      --accent-dim: rgba(2, 132, 199, .12);
+      --red: #dc2626;
+      --red-dim: rgba(220, 38, 38, .12);
+      --red-glow: rgba(220, 38, 38, .35);
+      --yellow: #b45309;
+      --yellow-dim: rgba(180, 83, 9, .12);
+      --green: #15803d;
+      --green-dim: rgba(21, 128, 61, .12);
+      --gray: #64748b;
+      --gray-dim: rgba(100, 116, 139, .14);
+      --c-clear: #0284c7;
+      --c-muddy: #b45309;
+      --c-debris: #dc2626;
+      --c-rock: #7c3aed;
+      --shadow: 0 12px 32px rgba(15, 23, 42, .15);
+    }
+
+    /* Wall-display scaling. Everything below is in rem, so one knob
+       resizes the whole board for a projector or a 4K panel. */
+    :root[data-zoom="md"] { font-size: 15px; }
+    :root[data-zoom="lg"] { font-size: 17px; }
+    :root[data-zoom="xl"] { font-size: 20px; }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: var(--bg-0);
+      color: var(--fg-0);
+      font-family: 'Inter', 'Noto Sans TC', system-ui, sans-serif;
+      overflow: hidden;
+    }
+
+    button, input, select { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 6px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--fg-3); }
+    .hidden { display: none !important; }
+    .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+    /* ============================================================
+       Header
+       ============================================================ */
+    header.topbar {
+      height: var(--header-h);
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 0 1rem;
+      background: var(--bg-1);
+      border-bottom: 1px solid var(--line);
+      position: relative;
+      z-index: 40;
+    }
+
+    .brand { display: flex; align-items: center; gap: .6rem; flex: 0 0 auto; }
+    .brand-mark {
+      width: 2.3rem; height: 2.3rem; display: grid; place-items: center;
+      border-radius: var(--radius); background: linear-gradient(135deg, var(--accent), #6366f1);
+      font-size: 1.2rem;
+    }
+    .brand-txt h1 { margin: 0; font-size: 1.02rem; font-weight: 800; letter-spacing: .01em; }
+    .brand-txt p { margin: 0; font-size: .68rem; color: var(--fg-3); letter-spacing: .06em; text-transform: uppercase; }
+
+    /* KPI pills double as filters — clicking one scopes the queue. */
+    .kpis { display: flex; gap: .5rem; flex: 1 1 auto; min-width: 0; overflow: hidden; }
+    .kpi {
+      display: flex; align-items: center; gap: .55rem;
+      padding: .4rem .8rem .4rem .6rem;
+      background: var(--bg-2); border: 1px solid var(--line);
+      border-radius: var(--radius); transition: .15s; white-space: nowrap;
+    }
+    .kpi:hover { background: var(--bg-hover); }
+    .kpi[aria-pressed="true"] { border-color: currentColor; background: var(--bg-3); }
+    .kpi .k-icon { font-size: .9rem; line-height: 1; }
+    .kpi .k-num { font-size: 1.5rem; font-weight: 800; line-height: 1; font-family: var(--mono); }
+    .kpi .k-lab { font-size: .7rem; color: var(--fg-2); line-height: 1.2; }
+    .kpi.red { color: var(--red); } .kpi.red .k-num { color: var(--red); }
+    .kpi.yellow { color: var(--yellow); } .kpi.yellow .k-num { color: var(--yellow); }
+    .kpi.gray { color: var(--gray); } .kpi.gray .k-num { color: var(--gray); }
+    .kpi.green { color: var(--green); } .kpi.green .k-num { color: var(--green); }
+    .kpi.red[data-hot="1"] { animation: kpiPulse 1.3s ease-in-out infinite; }
+    @keyframes kpiPulse {
+      0%, 100% { box-shadow: 0 0 0 0 var(--red-glow); }
+      50% { box-shadow: 0 0 0 .5rem rgba(255, 77, 79, 0); }
+    }
+
+    .head-right { display: flex; align-items: center; gap: .5rem; flex: 0 0 auto; }
+
+    .clock { text-align: right; line-height: 1.25; }
+    .clock .c-time { font-size: 1.15rem; font-weight: 700; font-family: var(--mono); }
+    .clock .c-sub { font-size: .68rem; color: var(--fg-3); }
+
+    .conn {
+      display: flex; align-items: center; gap: .45rem;
+      padding: .35rem .7rem; border-radius: 999px;
+      background: var(--green-dim); color: var(--green);
+      font-size: .74rem; font-weight: 600; white-space: nowrap;
+    }
+    .conn.bad { background: var(--red-dim); color: var(--red); }
+    .conn .dot { width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; }
+    .conn.ok .dot { animation: blink 2s ease-in-out infinite; }
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+
+    .tabs { display: flex; background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius); padding: .2rem; }
+    .tab {
+      padding: .38rem .8rem; border: 0; background: transparent; color: var(--fg-2);
+      border-radius: 7px; font-size: .8rem; font-weight: 600; transition: .15s;
+    }
+    .tab:hover { color: var(--fg-0); }
+    .tab.active { background: var(--accent-dim); color: var(--accent); }
+
+    .icon-btn {
+      width: 2.2rem; height: 2.2rem; display: grid; place-items: center;
+      background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius);
+      color: var(--fg-1); font-size: 1rem; transition: .15s;
+    }
+    .icon-btn:hover { background: var(--bg-hover); color: var(--fg-0); }
+    .icon-btn.on { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+    /* ============================================================
+       Settings popover
+       ============================================================ */
+    .popover {
+      position: absolute; top: calc(var(--header-h) - .4rem); right: .8rem;
+      width: 20rem; background: var(--bg-1); border: 1px solid var(--line-strong);
+      border-radius: var(--radius-lg); box-shadow: var(--shadow); z-index: 60; padding: .9rem;
+    }
+    .popover h3 { margin: 0 0 .7rem; font-size: .8rem; color: var(--fg-2); text-transform: uppercase; letter-spacing: .08em; }
+    .set-row { display: flex; align-items: center; justify-content: space-between; gap: .8rem; padding: .42rem 0; }
+    .set-row label { font-size: .84rem; color: var(--fg-1); }
+    .set-row .hint { display: block; font-size: .68rem; color: var(--fg-3); }
+    .seg { display: flex; background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+    .seg button { padding: .25rem .55rem; border: 0; background: transparent; color: var(--fg-2); font-size: .74rem; font-weight: 600; }
+    .seg button.active { background: var(--accent-dim); color: var(--accent); }
+    .num-in { width: 4.2rem; padding: .28rem .45rem; background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; text-align: right; font-family: var(--mono); font-size: .8rem; }
+    .switch { position: relative; width: 2.4rem; height: 1.3rem; border-radius: 999px; background: var(--bg-3); border: 1px solid var(--line); transition: .18s; flex: 0 0 auto; }
+    .switch::after { content: ''; position: absolute; top: 50%; left: .18rem; transform: translateY(-50%); width: .9rem; height: .9rem; border-radius: 50%; background: var(--fg-3); transition: .18s; }
+    .switch.on { background: var(--accent-dim); border-color: var(--accent); }
+    .switch.on::after { left: 1.28rem; background: var(--accent); }
+    .pop-divider { height: 1px; background: var(--line); margin: .6rem 0; }
+    .link-btn { background: none; border: 0; color: var(--accent); font-size: .78rem; padding: .2rem 0; text-align: left; }
+
+    /* ============================================================
+       App shell
+       ============================================================ */
+    .app {
+      display: grid;
+      grid-template-columns: var(--col-queue) minmax(0, 1fr) var(--col-detail);
+      height: calc(100% - var(--header-h));
+    }
+    .app[data-mode="map"] { --col-queue: 0rem; --col-detail: 0rem; }
+    .app[data-mode="map"] .panel-queue,
+    .app[data-mode="map"] .panel-detail { display: none; }
+
+    .panel { background: var(--bg-1); display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
+    .panel-queue { border-right: 1px solid var(--line); }
+    .panel-detail { border-left: 1px solid var(--line); }
+
+    .resizer { position: absolute; top: 0; width: 6px; height: 100%; cursor: ew-resize; z-index: 20; }
+    .resizer:hover, .resizer.drag { background: var(--accent-dim); }
+    .resizer.r-right { right: -3px; }
+    .resizer.r-left { left: -3px; }
+
+    .panel-head {
+      display: flex; align-items: center; gap: .5rem;
+      padding: .7rem .85rem; border-bottom: 1px solid var(--line); flex: 0 0 auto;
+    }
+    .panel-head h2 { margin: 0; font-size: .82rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--fg-2); }
+    .panel-head .spacer { flex: 1; }
+    .chip {
+      padding: .2rem .5rem; border-radius: 999px; font-size: .68rem; font-weight: 700;
+      background: var(--bg-3); color: var(--fg-2); font-family: var(--mono);
+    }
+
+    .search-wrap { padding: .6rem .7rem; border-bottom: 1px solid var(--line); display: flex; gap: .4rem; flex: 0 0 auto; }
+    .search {
+      flex: 1; padding: .5rem .7rem; background: var(--bg-2); border: 1px solid var(--line);
+      border-radius: var(--radius); font-size: .84rem;
+    }
+    .search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+    .search::placeholder { color: var(--fg-3); }
+    .mini-btn {
+      padding: .5rem .6rem; background: var(--bg-2); border: 1px solid var(--line);
+      border-radius: var(--radius); font-size: .74rem; color: var(--fg-2); white-space: nowrap;
+    }
+    .mini-btn:hover { background: var(--bg-hover); color: var(--fg-0); }
+    .mini-btn.on { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+    /* ============================================================
+       Alert queue
+       ============================================================ */
+    .queue-list { flex: 1 1 auto; overflow-y: auto; overflow-x: hidden; padding: .5rem; }
+
+    .sec-head {
+      display: flex; align-items: center; gap: .5rem;
+      padding: .45rem .55rem; margin: .5rem 0 .35rem;
+      font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+      color: var(--fg-2); border-radius: 8px; background: var(--bg-2);
+      position: sticky; top: -.5rem; z-index: 5;
+    }
+    .sec-head:first-child { margin-top: 0; }
+    .sec-head .n { margin-left: auto; font-family: var(--mono); font-size: .8rem; color: var(--fg-1); }
+    .sec-head.s-red { color: var(--red); background: var(--red-dim); }
+    .sec-head.s-yellow { color: var(--yellow); background: var(--yellow-dim); }
+    .sec-head.s-offline { color: var(--gray); background: var(--gray-dim); }
+    .sec-head.s-green { color: var(--green); background: var(--green-dim); }
+    .sec-head .caret { transition: transform .18s; }
+    .sec-head.collapsed .caret { transform: rotate(-90deg); }
+
+    .q-row {
+      display: grid; grid-template-columns: 3px 4.6rem minmax(0, 1fr) auto;
+      gap: .55rem; align-items: center;
+      padding: .5rem .55rem .5rem .35rem; margin-bottom: .3rem;
+      background: var(--bg-2); border: 1px solid transparent; border-radius: var(--radius);
+      cursor: pointer; transition: background .12s, border-color .12s;
+    }
+    .q-row:hover { background: var(--bg-hover); }
+    .q-row.sel { border-color: var(--accent); background: var(--accent-dim); }
+    .q-bar { align-self: stretch; border-radius: 3px; background: var(--gray); }
+    .q-row.a-red .q-bar { background: var(--red); }
+    .q-row.a-yellow .q-bar { background: var(--yellow); }
+    .q-row.a-green .q-bar { background: var(--green); }
+    .q-row.a-red { box-shadow: inset 0 0 0 1px var(--red-dim); }
+
+    .q-thumb {
+      width: 4.6rem; height: 2.9rem; border-radius: 6px; overflow: hidden;
+      background: var(--bg-3); position: relative; flex: 0 0 auto;
+    }
+    .q-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .q-thumb .ph { position: absolute; inset: 0; display: grid; place-items: center; font-size: .9rem; color: var(--fg-3); }
+    .q-main { min-width: 0; }
+    .q-name { font-size: .87rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .q-meta { font-size: .7rem; color: var(--fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .q-reason { font-size: .72rem; color: var(--yellow); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .q-row.a-red .q-reason { color: var(--red); }
+    .q-right { text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: .18rem; }
+    .q-age { font-size: .68rem; color: var(--fg-3); font-family: var(--mono); }
+    .q-age.stale { color: var(--yellow); }
+    .q-age.offline { color: var(--red); }
+
+    .badge {
+      display: inline-flex; align-items: center; gap: .25rem;
+      padding: .1rem .38rem; border-radius: 5px;
+      font-size: .64rem; font-weight: 800; letter-spacing: .04em; font-family: var(--mono);
+    }
+    .badge.red { background: var(--red-dim); color: var(--red); }
+    .badge.yellow { background: var(--yellow-dim); color: var(--yellow); }
+    .badge.green { background: var(--green-dim); color: var(--green); }
+    .badge.gray { background: var(--gray-dim); color: var(--gray); }
+    .badge.ack { background: var(--bg-3); color: var(--fg-2); }
+
+    .empty { padding: 2rem 1rem; text-align: center; color: var(--fg-3); font-size: .82rem; }
+    .empty .big { font-size: 2rem; display: block; margin-bottom: .4rem; }
+
+    /* ============================================================
+       Center: map + event feed
+       ============================================================ */
+    .center { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg-0); }
+    .map-wrap { flex: 1 1 auto; position: relative; min-height: 0; }
+    #map { position: absolute; inset: 0; background: var(--bg-0); }
+    .ol-attribution { font-size: .62rem !important; }
+    :root[data-theme="dark"] .ol-attribution { background: rgba(0, 0, 0, .5) !important; }
+    :root[data-theme="dark"] .ol-attribution a { color: #94a3b8 !important; }
+
+    .map-tools { position: absolute; top: .7rem; left: .7rem; display: flex; flex-direction: column; gap: .4rem; z-index: 10; }
+    .map-tools .icon-btn { background: var(--bg-1); box-shadow: var(--shadow); }
+    .map-legend {
+      position: absolute; bottom: .7rem; left: .7rem; z-index: 10;
+      background: var(--bg-1); border: 1px solid var(--line); border-radius: var(--radius);
+      padding: .55rem .7rem; box-shadow: var(--shadow); font-size: .72rem;
+    }
+    .map-legend .lg-title { font-size: .64rem; text-transform: uppercase; letter-spacing: .07em; color: var(--fg-3); margin-bottom: .35rem; }
+    .map-legend .lg-item { display: flex; align-items: center; gap: .45rem; padding: .12rem 0; color: var(--fg-1); }
+    .lg-dot { width: .7rem; height: .7rem; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .8); }
+
+    /* Pulsing halo overlay, attached only to cameras currently in red.
+       Cheap because reds are few; an OL post-render animation for all
+       63 points would burn frames for nothing. */
+    .pulse { width: 2.6rem; height: 2.6rem; margin: -1.3rem 0 0 -1.3rem; border-radius: 50%; pointer-events: none; }
+    .pulse::before, .pulse::after {
+      content: ''; position: absolute; inset: 0; border-radius: 50%;
+      border: 2px solid var(--red); animation: ring 1.8s ease-out infinite;
+    }
+    .pulse::after { animation-delay: .9s; }
+    @keyframes ring {
+      0% { transform: scale(.35); opacity: .9; }
+      100% { transform: scale(1); opacity: 0; }
+    }
+
+    .feed { height: var(--feed-h); border-top: 1px solid var(--line); background: var(--bg-1); display: flex; flex-direction: column; flex: 0 0 auto; }
+    .feed.collapsed { height: 2.5rem; }
+    .feed.collapsed .feed-body { display: none; }
+    .feed-head { display: flex; align-items: center; gap: .5rem; padding: .45rem .8rem; border-bottom: 1px solid var(--line); }
+    .feed-head h2 { margin: 0; font-size: .74rem; text-transform: uppercase; letter-spacing: .06em; color: var(--fg-2); }
+    .feed-body { flex: 1; overflow-y: auto; padding: .25rem .5rem .5rem; }
+    .ev {
+      display: grid; grid-template-columns: 4.4rem auto minmax(0, 1fr) auto;
+      gap: .6rem; align-items: baseline;
+      padding: .3rem .5rem; border-radius: 7px; font-size: .78rem; cursor: pointer;
+    }
+    .ev:hover { background: var(--bg-2); }
+    .ev .ev-t { font-family: var(--mono); font-size: .72rem; color: var(--fg-3); }
+    .ev .ev-cam { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ev .ev-msg { color: var(--fg-2); font-size: .74rem; }
+    .ev.lv-red { background: linear-gradient(90deg, var(--red-dim), transparent 60%); }
+    .ev.lv-yellow { background: linear-gradient(90deg, var(--yellow-dim), transparent 60%); }
+    .arrow { font-family: var(--mono); font-weight: 700; }
+
+    /* ============================================================
+       Detail panel
+       ============================================================ */
+    .detail-body { flex: 1 1 auto; overflow-y: auto; }
+    .d-head { padding: .8rem .85rem .6rem; border-bottom: 1px solid var(--line); }
+    .d-name { font-size: 1.05rem; font-weight: 700; line-height: 1.3; }
+    .d-name a { color: inherit; text-decoration: none; }
+    .d-name a:hover { color: var(--accent); text-decoration: underline; }
+    .d-loc { font-size: .74rem; color: var(--fg-3); margin-top: .15rem; }
+
+    .d-status {
+      display: flex; align-items: center; gap: .7rem;
+      margin: .7rem .85rem; padding: .7rem .8rem; border-radius: var(--radius-lg);
+      background: var(--bg-2); border-left: 4px solid var(--gray);
+    }
+    .d-status.a-red { background: var(--red-dim); border-color: var(--red); }
+    .d-status.a-yellow { background: var(--yellow-dim); border-color: var(--yellow); }
+    .d-status.a-green { background: var(--green-dim); border-color: var(--green); }
+    .d-status .s-icon { font-size: 1.5rem; }
+    .d-status .s-txt { flex: 1; min-width: 0; }
+    .d-status .s-lv { font-size: 1rem; font-weight: 800; }
+    .d-status.a-red .s-lv { color: var(--red); }
+    .d-status.a-yellow .s-lv { color: var(--yellow); }
+    .d-status.a-green .s-lv { color: var(--green); }
+    .d-status .s-sub { font-size: .74rem; color: var(--fg-2); }
+
+    .frame { position: relative; margin: 0 .85rem; border-radius: var(--radius); overflow: hidden; background: #000; aspect-ratio: 4 / 3; }
+    .frame img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    .frame .f-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--fg-3); font-size: .82rem; background: var(--bg-3); }
+    .frame .f-stamp {
+      position: absolute; left: .5rem; bottom: .5rem;
+      background: rgba(0, 0, 0, .7); color: #fff; padding: .18rem .45rem;
+      border-radius: 5px; font-size: .68rem; font-family: var(--mono);
+    }
+    .frame .f-lv { position: absolute; right: .5rem; top: .5rem; }
+    .frame .f-nav {
+      position: absolute; top: 50%; transform: translateY(-50%);
+      width: 2rem; height: 2.6rem; border: 0; background: rgba(0, 0, 0, .5); color: #fff;
+      font-size: 1.2rem; opacity: 0; transition: opacity .15s;
+    }
+    .frame:hover .f-nav { opacity: 1; }
+    .frame .f-nav.prev { left: 0; border-radius: 0 6px 6px 0; }
+    .frame .f-nav.next { right: 0; border-radius: 6px 0 0 6px; }
+
+    .f-ctrl { display: flex; align-items: center; gap: .5rem; margin: .5rem .85rem 0; }
+    .f-ctrl input[type=range] { flex: 1; accent-color: var(--accent); }
+    .f-ctrl .cnt { font-family: var(--mono); font-size: .7rem; color: var(--fg-3); min-width: 3rem; text-align: right; }
+
+    .sec { margin: 1rem .85rem 0; }
+    .sec-title { font-size: .7rem; text-transform: uppercase; letter-spacing: .07em; color: var(--fg-3); margin-bottom: .5rem; display: flex; align-items: center; gap: .4rem; }
+    .sec-title .spacer { flex: 1; }
+
+    .bars { display: flex; flex-direction: column; gap: .5rem; }
+    .bar-row { display: grid; grid-template-columns: 4.6rem minmax(0, 1fr) 3.6rem; gap: .5rem; align-items: center; }
+    .bar-lab { font-size: .76rem; color: var(--fg-1); display: flex; align-items: center; gap: .35rem; }
+    .bar-lab .sw { width: .6rem; height: .6rem; border-radius: 2px; flex: 0 0 auto; }
+    .bar-track { height: .55rem; background: var(--bg-3); border-radius: 4px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 4px; transition: width .35s ease; }
+    .bar-val { font-family: var(--mono); font-size: .72rem; text-align: right; color: var(--fg-1); }
+    .bar-conf { font-size: .62rem; color: var(--fg-3); }
+
+    .chart-box { position: relative; height: 8.5rem; background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius); padding: .4rem; }
+    .chart-box canvas { width: 100%; height: 100%; display: block; }
+    .legend { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .45rem; }
+    .lg-chip {
+      display: flex; align-items: center; gap: .3rem; padding: .16rem .45rem;
+      border-radius: 999px; background: var(--bg-2); border: 1px solid var(--line);
+      font-size: .68rem; color: var(--fg-2);
+    }
+    .lg-chip.off { opacity: .38; }
+    .lg-chip .sw { width: .55rem; height: .55rem; border-radius: 50%; }
+
+    .kv { display: grid; grid-template-columns: auto 1fr; gap: .25rem .7rem; font-size: .76rem; }
+    .kv dt { color: var(--fg-3); }
+    .kv dd { margin: 0; color: var(--fg-1); font-family: var(--mono); font-size: .74rem; word-break: break-all; }
+
+    .d-actions { display: flex; flex-wrap: wrap; gap: .4rem; margin: 1rem .85rem 1.2rem; }
+    .act {
+      flex: 1 1 auto; padding: .55rem .6rem; border-radius: var(--radius);
+      background: var(--bg-2); border: 1px solid var(--line); color: var(--fg-1);
+      font-size: .78rem; font-weight: 600; transition: .15s; white-space: nowrap;
+    }
+    .act:hover { background: var(--bg-hover); color: var(--fg-0); }
+    .act.primary { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+    .act.danger { background: var(--red-dim); border-color: var(--red); color: var(--red); }
+
+    /* ============================================================
+       Wall view
+       ============================================================ */
+    .wall-shell { height: calc(100% - var(--header-h)); display: flex; flex-direction: column; background: var(--bg-0); }
+    .wall-bar { display: flex; align-items: center; gap: .5rem; padding: .55rem .8rem; border-bottom: 1px solid var(--line); background: var(--bg-1); }
+    .wall-grid {
+      flex: 1; overflow-y: auto; padding: .7rem;
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--tile), 1fr)); gap: .7rem; align-content: start;
+    }
+    .tile {
+      background: var(--bg-2); border: 2px solid var(--line); border-radius: var(--radius);
+      overflow: hidden; cursor: pointer; transition: transform .12s, border-color .12s;
+    }
+    .tile:hover { transform: translateY(-2px); border-color: var(--accent); }
+    .tile.a-red { border-color: var(--red); box-shadow: 0 0 0 1px var(--red-dim), 0 0 20px var(--red-dim); }
+    .tile.a-yellow { border-color: var(--yellow); }
+    .tile.a-green { border-color: var(--line); }
+    .tile.link-offline { border-style: dashed; border-color: var(--gray); }
+    .tile-img { position: relative; aspect-ratio: 4 / 3; background: #000; }
+    .tile-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .tile-img .ph { position: absolute; inset: 0; display: grid; place-items: center; color: var(--fg-3); background: var(--bg-3); font-size: .78rem; }
+    .tile-img .t-lv { position: absolute; top: .3rem; right: .3rem; }
+    .tile-img .t-age { position: absolute; bottom: .3rem; right: .35rem; background: rgba(0, 0, 0, .65); color: #cbd5e1; padding: .08rem .3rem; border-radius: 4px; font-size: .62rem; font-family: var(--mono); }
+    .tile-cap { padding: .4rem .5rem; }
+    .tile-name { font-size: .8rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tile-sub { font-size: .66rem; color: var(--fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tile.a-red .tile-name { color: var(--red); }
+
+    /* ============================================================
+       Toasts
+       ============================================================ */
+    .toasts { position: fixed; top: calc(var(--header-h) + .6rem); right: .9rem; z-index: 90; display: flex; flex-direction: column; gap: .5rem; width: 21rem; }
+    .toast {
+      background: var(--bg-1); border: 1px solid var(--red); border-left-width: 5px;
+      border-radius: var(--radius); box-shadow: var(--shadow); padding: .7rem .8rem; cursor: pointer;
+      animation: slideIn .25s ease-out;
+    }
+    .toast.lv-yellow { border-color: var(--yellow); }
+    .toast .t-head { display: flex; align-items: center; gap: .4rem; font-size: .82rem; font-weight: 700; color: var(--red); }
+    .toast.lv-yellow .t-head { color: var(--yellow); }
+    .toast .t-body { font-size: .74rem; color: var(--fg-2); margin-top: .2rem; }
+    @keyframes slideIn { from { transform: translateX(110%); opacity: 0; } to { transform: none; opacity: 1; } }
+
+    .banner {
+      position: fixed; top: calc(var(--header-h) + .6rem); left: 50%; transform: translateX(-50%);
+      z-index: 95; background: var(--red); color: #fff; padding: .5rem 1rem;
+      border-radius: 999px; font-size: .82rem; font-weight: 700; box-shadow: var(--shadow);
+    }
+
+    /* Narrow screens: this board targets a wall, but a laptop should
+       still be usable — drop to map + queue and float the detail. */
+    @media (max-width: 1400px) { :root { --col-detail: 23rem; --col-queue: 20rem; } }
+    @media (max-width: 1100px) {
+      .app { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+      .panel-queue { position: absolute; left: 0; top: var(--header-h); bottom: 0; width: 20rem; z-index: 30; box-shadow: var(--shadow); }
+      .panel-detail { position: absolute; right: 0; top: var(--header-h); bottom: 0; width: 22rem; z-index: 30; box-shadow: var(--shadow); }
+    }
+  </style>
+</head>
+
+<body>
+  <!-- ===================== HEADER ===================== -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">🌊</div>
+      <div class="brand-txt">
+        <h1>土石流監測值班台</h1>
+        <p>Debris Flow Ops Console</p>
+      </div>
+    </div>
+
+    <div class="kpis" id="kpis">
+      <button class="kpi red" data-filter="red" aria-pressed="false">
+        <span class="k-icon">▲</span>
+        <span><span class="k-num" id="kpi-red">0</span></span>
+        <span class="k-lab">紅燈<br>警報</span>
+      </button>
+      <button class="kpi yellow" data-filter="yellow" aria-pressed="false">
+        <span class="k-icon">◆</span>
+        <span><span class="k-num" id="kpi-yellow">0</span></span>
+        <span class="k-lab">黃燈<br>警示</span>
+      </button>
+      <button class="kpi gray" data-filter="offline" aria-pressed="false">
+        <span class="k-icon">✕</span>
+        <span><span class="k-num" id="kpi-offline">0</span></span>
+        <span class="k-lab">停更<br>離線</span>
+      </button>
+      <button class="kpi green" data-filter="green" aria-pressed="false">
+        <span class="k-icon">●</span>
+        <span><span class="k-num" id="kpi-green">0</span></span>
+        <span class="k-lab">正常<br>回報</span>
+      </button>
+    </div>
+
+    <div class="head-right">
+      <div class="conn ok" id="conn"><span class="dot"></span><span id="conn-txt">連線正常</span></div>
+      <div class="clock">
+        <div class="c-time" id="clock">--:--:--</div>
+        <div class="c-sub" id="data-age">尚未取得資料</div>
+      </div>
+      <div class="tabs" id="tabs">
+        <button class="tab active" data-mode="console">監控台</button>
+        <button class="tab" data-mode="wall">影像牆</button>
+        <button class="tab" data-mode="map">全圖</button>
+      </div>
+      <button class="icon-btn" id="btn-sound" title="警報音效 (M)">🔕</button>
+      <button class="icon-btn" id="btn-settings" title="設定">⚙</button>
+      <button class="icon-btn" id="btn-full" title="全螢幕 (F)">⛶</button>
+    </div>
+  </header>
+
+  <!-- ===================== SETTINGS ===================== -->
+  <div class="popover hidden" id="settings">
+    <h3>顯示</h3>
+    <div class="set-row">
+      <label>畫面比例<span class="hint">大螢幕請調大</span></label>
+      <div class="seg" id="seg-zoom">
+        <button data-v="md">中</button><button data-v="lg">大</button><button data-v="xl">特大</button>
+      </div>
+    </div>
+    <div class="set-row">
+      <label>佈景</label>
+      <div class="seg" id="seg-theme">
+        <button data-v="dark">深色</button><button data-v="light">亮色</button>
+      </div>
+    </div>
+    <div class="set-row">
+      <label>底圖</label>
+      <div class="seg" id="seg-base">
+        <button data-v="dark">深色</button><button data-v="street">街道</button><button data-v="sat">影像</button>
+      </div>
+    </div>
+    <div class="set-row">
+      <label>顯示原始影像<span class="hint">關閉時顯示 AI 標註結果</span></label>
+      <button class="switch" id="sw-raw"></button>
+    </div>
+
+    <div class="pop-divider"></div>
+    <h3>警戒判定</h3>
+    <div class="set-row">
+      <label>資料停更門檻<span class="hint">超過即標示為「停更」</span></label>
+      <div><input class="num-in" type="number" id="in-stale" min="1" step="1"> <span style="font-size:.72rem;color:var(--fg-3)">分</span></div>
+    </div>
+    <div class="set-row">
+      <label>離線門檻<span class="hint">超過即視為相機離線</span></label>
+      <div><input class="num-in" type="number" id="in-offline" min="2" step="1"> <span style="font-size:.72rem;color:var(--fg-3)">分</span></div>
+    </div>
+    <div class="set-row">
+      <label>更新頻率</label>
+      <div><input class="num-in" type="number" id="in-poll" min="2" step="1"> <span style="font-size:.72rem;color:var(--fg-3)">秒</span></div>
+    </div>
+
+    <div class="pop-divider"></div>
+    <h3>提示</h3>
+    <div class="set-row">
+      <label>新警報音效</label>
+      <button class="switch" id="sw-sound"></button>
+    </div>
+    <div class="set-row">
+      <label>桌面通知<span class="hint">需瀏覽器授權</span></label>
+      <button class="switch" id="sw-notify"></button>
+    </div>
+
+    <div class="pop-divider"></div>
+    <button class="link-btn" id="btn-export">⬇ 匯出目前狀態 CSV</button><br>
+    <button class="link-btn" id="btn-ackall">✓ 確認全部警報</button><br>
+    <button class="link-btn" id="btn-reset">↺ 重設所有設定</button>
+  </div>
+
+  <!-- ===================== CONSOLE ===================== -->
+  <div class="app" id="app" data-mode="console">
+    <!-- Alert queue -->
+    <aside class="panel panel-queue">
+      <div class="panel-head">
+        <h2>警報佇列</h2>
+        <span class="spacer"></span>
+        <span class="chip" id="q-count">0</span>
+      </div>
+      <div class="search-wrap">
+        <input class="search" id="q-search" type="text" placeholder="搜尋名稱 / 縣市 / 行政區　( / )">
+        <button class="mini-btn on" id="btn-abnormal" title="只顯示需要注意的相機">異常優先</button>
+      </div>
+      <div class="queue-list" id="queue"></div>
+      <div class="resizer r-right" data-target="queue"></div>
+    </aside>
+
+    <!-- Map + event feed -->
+    <section class="center">
+      <div class="map-wrap">
+        <div id="map"></div>
+        <div class="map-tools">
+          <button class="icon-btn" id="btn-fit" title="回到全島">🗺</button>
+          <button class="icon-btn" id="btn-next-alert" title="跳到下一個警報 (N)">⚑</button>
+          <button class="icon-btn" id="btn-labels" title="顯示／隱藏站名">🏷</button>
+        </div>
+        <div class="map-legend">
+          <div class="lg-title">圖例</div>
+          <div class="lg-item"><span class="lg-dot" style="background:var(--red)"></span>紅燈：偵測到土石流</div>
+          <div class="lg-item"><span class="lg-dot" style="background:var(--yellow)"></span>黃燈：濁流／異常徵兆</div>
+          <div class="lg-item"><span class="lg-dot" style="background:var(--green)"></span>綠燈：正常</div>
+          <div class="lg-item"><span class="lg-dot" style="background:var(--gray);border-style:dashed"></span>灰：停更／離線</div>
+        </div>
+      </div>
+
+      <div class="feed" id="feed">
+        <div class="feed-head">
+          <h2>事件時間軸</h2>
+          <span class="chip" id="ev-count">0</span>
+          <span style="flex:1"></span>
+          <button class="mini-btn" id="btn-clear-ev">清除</button>
+          <button class="icon-btn" id="btn-feed" style="width:1.8rem;height:1.8rem;font-size:.8rem">▾</button>
+        </div>
+        <div class="feed-body" id="feed-body">
+          <div class="empty" style="padding:1rem"><span class="big">🕓</span>本次連線尚未偵測到燈號變化</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Detail -->
+    <aside class="panel panel-detail">
+      <div class="resizer r-left" data-target="detail"></div>
+      <div class="panel-head">
+        <h2>單站詳情</h2>
+        <span class="spacer"></span>
+        <button class="mini-btn" id="btn-play" title="自動播放影像序列">⏸ 暫停</button>
+      </div>
+      <div class="detail-body" id="detail">
+        <div class="empty" style="margin-top:4rem"><span class="big">👈</span>從左側佇列或地圖選擇一台攝影機</div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- ===================== WALL ===================== -->
+  <div class="wall-shell hidden" id="wall-shell">
+    <div class="wall-bar">
+      <input class="search" id="w-search" type="text" placeholder="搜尋攝影機…" style="max-width:22rem">
+      <button class="mini-btn on" id="w-abnormal">異常優先</button>
+      <span style="flex:1"></span>
+      <span style="font-size:.72rem;color:var(--fg-3)">磚塊大小</span>
+      <div class="seg" id="seg-tile">
+        <button data-v="11">小</button><button data-v="15">中</button><button data-v="21">大</button>
+      </div>
+    </div>
+    <div class="wall-grid" id="wall"></div>
+  </div>
+
+  <div class="toasts" id="toasts"></div>
+
+  <script>
+    'use strict';
+
+    /* ==========================================================
+       1. Constants & configuration
+       ========================================================== */
+    const LABELS = ['clear_water', 'muddy_water', 'debris_flow', 'large_rock'];
+    const LABEL_TW = { clear_water: '清水', muddy_water: '濁水', debris_flow: '土石流', large_rock: '大石塊' };
+    const LABEL_COLOR = {
+      clear_water: 'var(--c-clear)', muddy_water: 'var(--c-muddy)',
+      debris_flow: 'var(--c-debris)', large_rock: 'var(--c-rock)'
+    };
+    const ALERT_TW = { red: '紅燈警報', yellow: '黃燈警示', green: '綠燈正常', unknown: '無資料' };
+    const ALERT_ICON = { red: '▲', yellow: '◆', green: '●', unknown: '?' };
+    const LINK_TW = { live: '連線中', stale: '資料停更', offline: '離線', nodata: '無回報' };
+
+    const BASEMAPS = {
+      dark: { url: 'https://{a-c}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', attr: '© OpenStreetMap © CARTO' },
+      street: { url: 'https://{a-c}.basemaps.cartocdn.com/voyager/{z}/{x}/{y}{r}.png', attr: '© OpenStreetMap © CARTO' },
+      sat: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr: '© Esri' }
+    };
+
+    const DEFAULTS = {
+      zoom: 'md', theme: 'dark', base: 'dark',
+      staleMin: 5, offlineMin: 15, pollSec: 5,
+      sound: false, notify: false, raw: false,
+      abnormalOnly: true, tile: 15, labels: true
+    };
+    const LS = 'dfm.console.v1';
+    const cfg = Object.assign({}, DEFAULTS, readLS(LS, {}));
+
+    /* ==========================================================
+       2. State
+       ========================================================== */
+    const S = {
+      cams: [],                 // static camera metadata from cctv.json
+      byName: new Map(),        // name -> metadata
+      status: {},               // raw camera_status.json
+      view: [],                 // derived per-camera view models, severity-sorted
+      viewByName: new Map(),
+      selected: null,
+      prevAlert: new Map(),     // name -> last alert level, for transition detection
+      prevLink: new Map(),
+      events: [],               // derived event feed
+      acks: new Map(Object.entries(readLS(LS + '.acks', {}))),
+      series: new Map(),        // name -> [{t, prop, conf, alert}] accumulated this session
+      kpiFilter: null,
+      lastGood: null,           // timestamp of last successful poll
+      failures: 0,
+      frame: { seq: [], idx: 0, playing: true },
+      chartVis: Object.fromEntries(LABELS.map(l => [l, true])),
+      showLabels: cfg.labels
+    };
+    const MAX_SERIES = 720;     // ~1h at 5s polling
+    const MAX_EVENTS = 200;
+
+    let map, camLayer, camSource, baseLayer, pulses = new Map();
+    let pollTimer = null, frameTimer = null, audioCtx = null;
+
+    /* ==========================================================
+       3. Small utilities
+       ========================================================== */
+    function readLS(k, fallback) {
+      try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fallback; } catch (e) { return fallback; }
+    }
+    function writeLS(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { } }
+    function saveCfg() { writeLS(LS, cfg); }
+    function saveAcks() { writeLS(LS + '.acks', Object.fromEntries(S.acks)); }
+    function $(sel, root) { return (root || document).querySelector(sel); }
+    function el(tag, cls, txt) {
+      const n = document.createElement(tag);
+      if (cls) n.className = cls;
+      if (txt != null) n.textContent = txt;
+      return n;
+    }
+    function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+
+    // The detector writes naive local time ("2026-08-16 15:26:35"); the board is
+    // assumed to run in the same timezone as the detector host.
+    function parseTs(s) {
+      if (!s) return null;
+      const d = new Date(String(s).replace(' ', 'T'));
+      return isNaN(d) ? null : d;
+    }
+    function fmtClock(d) {
+      return [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2, '0')).join(':');
+    }
+    function fmtAge(sec) {
+      if (sec == null) return '—';
+      if (sec < 60) return Math.max(0, Math.round(sec)) + ' 秒前';
+      if (sec < 3600) return Math.floor(sec / 60) + ' 分前';
+      const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+      return m ? `${h} 時 ${m} 分前` : `${h} 小時前`;
+    }
+    function pct(v) { return ((v || 0) * 100).toFixed(1) + '%'; }
+
+    // Image filenames carry both the capture time and the level it was
+    // graded at: "<cam>_YYYYMMDD_HHMMSS_<alert>.jpg".
+    function parseImageName(url) {
+      const m = decodeURIComponent(url || '').match(/_(\d{8})_(\d{6})_(green|yellow|red)/);
+      if (!m) return { ts: null, alert: 'unknown', label: '—' };
+      const [, d, t, a] = m;
+      const label = `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)} ${t.slice(0, 2)}:${t.slice(2, 4)}:${t.slice(4, 6)}`;
+      return { ts: parseTs(label), alert: a, label };
+    }
+
+    /* ==========================================================
+       4. Data layer
+       ========================================================== */
+    async function fetchJSON(paths) {
+      let lastErr;
+      for (const p of paths) {
+        try {
+          const r = await fetch(p + (p.includes('?') ? '&' : '?') + '_t=' + Date.now(), { cache: 'no-store' });
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return await r.json();
+        } catch (e) { lastErr = e; }
+      }
+      throw lastErr;
+    }
+
+    async function loadCameras() {
+      // Served at /web_gis/console.html with data at the root; the relative
+      // fallback keeps the page usable behind a different mount point.
+      S.cams = await fetchJSON(['/cctv.json', '../cctv.json', 'cctv.json']);
+      S.cams.forEach(c => {
+        const m = {
+          name: c['攝影機名稱'],
+          county: c['縣市'] || '',
+          district: c['行政區'] || '',
+          place: c['架設或拍攝地點'] || '',
+          src: c['影像連結網址'] || '',
+          lon: parseFloat(c['經度']),
+          lat: parseFloat(c['緯度'])
+        };
+        S.byName.set(m.name, m);
+      });
+    }
+
+    async function poll() {
+      try {
+        S.status = await fetchJSON(['/camera_status.json', '/api/status', '../camera_status.json']);
+        S.failures = 0;
+        S.lastGood = new Date();
+      } catch (e) {
+        S.failures++;
+        console.warn('poll failed', e);
+      }
+      derive();
+      renderAll();
+    }
+
+    // Turns raw status + metadata into one view model per camera, and folds
+    // in the two things the raw feed does not say: how old the reading is,
+    // and whether an operator has already acknowledged it.
+    function derive() {
+      const now = Date.now();
+      const staleMs = cfg.staleMin * 60000, offMs = cfg.offlineMin * 60000;
+      const out = [];
+
+      for (const [name, m] of S.byName) {
+        const s = S.status[name] || null;
+        const ts = s ? parseTs(s.timestamp) : null;
+        const ageSec = ts ? (now - ts.getTime()) / 1000 : null;
+
+        let link = 'live';
+        if (!s || !ts) link = 'nodata';
+        else if (now - ts.getTime() > offMs) link = 'offline';
+        else if (now - ts.getTime() > staleMs) link = 'stale';
+
+        const alert = (s && s.alert) || 'unknown';
+        const reason = s ? (s.redReason || s.yellowReason || '') : '';
+
+        // Severity ranking for the queue. A dead camera outranks a yellow
+        // one: a blind station is a bigger operational problem than a
+        // station that is reporting a mild anomaly.
+        let rank;
+        if (alert === 'red') rank = 0;
+        else if (link === 'offline' || link === 'nodata') rank = 1;
+        else if (alert === 'yellow') rank = 2;
+        else if (link === 'stale') rank = 3;
+        else rank = 4;
+
+        const images = buildSequence(s);
+        const ackKey = S.acks.get(name);
+
+        const vm = {
+          name, meta: m, raw: s, alert, link, ts, ageSec, reason, rank, images,
+          prop: (s && s.proportion) || {},
+          conf: (s && s.confidence) || {},
+          overlap: !!(s && s.overlap_muddy_clear),
+          acked: ackKey === alert && (alert === 'red' || alert === 'yellow'),
+          abnormal: rank <= 3
+        };
+        out.push(vm);
+        pushSeries(vm);
+      }
+
+      out.sort((a, b) => a.rank - b.rank || (b.ageSec == null ? 1 : a.ageSec - b.ageSec) || a.name.localeCompare(b.name, 'zh-Hant'));
+      S.view = out;
+      S.viewByName = new Map(out.map(v => [v.name, v]));
+      detectTransitions(out);
+    }
+
+    // history/historyRaw are parallel arrays; when they are not, the raw
+    // twin is derivable from the annotated name ("..._green.jpg" ->
+    // "..._green_raw.jpg"), so a mismatch never blanks the viewer.
+    function buildSequence(s) {
+      if (!s) return [];
+      const ann = [...(Array.isArray(s.history) ? s.history : [])];
+      if (s.imageUrl && !ann.includes(s.imageUrl)) ann.push(s.imageUrl);
+      const raws = [...(Array.isArray(s.historyRaw) ? s.historyRaw : [])];
+      if (s.rawUrl && !raws.includes(s.rawUrl)) raws.push(s.rawUrl);
+
+      const uniq = [...new Set(ann.filter(Boolean))];
+      return uniq.map((u, i) => {
+        const info = parseImageName(u);
+        const raw = (raws.length === uniq.length && raws[i]) ? raws[i] : u.replace(/\.jpg$/i, '_raw.jpg');
+        return { annotated: u, raw, ts: info.ts, label: info.label, alert: info.alert };
+      }).sort((a, b) => (a.ts && b.ts) ? a.ts - b.ts : 0);
+    }
+
+    function pushSeries(vm) {
+      if (!vm.ts) return;
+      const arr = S.series.get(vm.name) || [];
+      const last = arr[arr.length - 1];
+      if (last && last.t === vm.ts.getTime()) return;   // same frame, nothing new
+      arr.push({ t: vm.ts.getTime(), prop: vm.prop, conf: vm.conf, alert: vm.alert });
+      if (arr.length > MAX_SERIES) arr.splice(0, arr.length - MAX_SERIES);
+      S.series.set(vm.name, arr);
+    }
+
+    /* ==========================================================
+       5. Event derivation, sound, notifications
+       ========================================================== */
+    const SEV = { green: 0, unknown: 0, yellow: 1, red: 2 };
+
+    function detectTransitions(view) {
+      const first = S.prevAlert.size === 0;
+      let escalations = [];
+
+      for (const vm of view) {
+        const pa = S.prevAlert.get(vm.name);
+        const pl = S.prevLink.get(vm.name);
+
+        if (!first && pa && pa !== vm.alert) {
+          const up = (SEV[vm.alert] || 0) > (SEV[pa] || 0);
+          addEvent({
+            ts: new Date(), cam: vm.name, level: vm.alert,
+            msg: `${ALERT_TW[pa] || pa} → ${ALERT_TW[vm.alert] || vm.alert}` +
+              (vm.reason ? `｜${vm.reason}` : ''),
+            kind: 'alert'
+          });
+          if (up && (vm.alert === 'red' || vm.alert === 'yellow')) {
+            S.acks.delete(vm.name);       // a fresh escalation needs a fresh ack
+            escalations.push(vm);
+          }
+        }
+
+        if (!first && pl && pl !== vm.link && (pl === 'live' || vm.link === 'live')) {
+          addEvent({
+            ts: new Date(), cam: vm.name, level: vm.link === 'live' ? 'green' : 'gray',
+            msg: vm.link === 'live' ? '影像回報恢復' : `影像中斷（${LINK_TW[vm.link]}）`,
+            kind: 'link'
+          });
+        }
+
+        S.prevAlert.set(vm.name, vm.alert);
+        S.prevLink.set(vm.name, vm.link);
+      }
+
+      if (escalations.length) {
+        saveAcks();
+        const worst = escalations.some(v => v.alert === 'red') ? 'red' : 'yellow';
+        alarm(worst);
+        escalations.slice(0, 4).forEach(v => toast(v));
+        notify(escalations, worst);
+      }
+    }
+
+    function addEvent(ev) {
+      S.events.unshift(ev);
+      if (S.events.length > MAX_EVENTS) S.events.length = MAX_EVENTS;
+    }
+
+    // Synthesised so the board needs no audio asset and works offline.
+    function alarm(level) {
+      if (!cfg.sound) return;
+      try {
+        audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const beeps = level === 'red' ? [[880, 0], [880, .22], [1174, .44]] : [[660, 0]];
+        for (const [freq, at] of beeps) {
+          const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+          o.type = 'sine'; o.frequency.value = freq;
+          const t0 = audioCtx.currentTime + at;
+          g.gain.setValueAtTime(0, t0);
+          g.gain.linearRampToValueAtTime(.28, t0 + .02);
+          g.gain.exponentialRampToValueAtTime(.001, t0 + .18);
+          o.connect(g); g.connect(audioCtx.destination);
+          o.start(t0); o.stop(t0 + .2);
+        }
+      } catch (e) { console.warn('alarm', e); }
+    }
+
+    function toast(vm) {
+      const box = el('div', 'toast lv-' + vm.alert);
+      const h = el('div', 't-head');
+      h.append(el('span', null, ALERT_ICON[vm.alert]), el('span', null, ALERT_TW[vm.alert]));
+      const b = el('div', 't-body', `${vm.name}｜${vm.meta.county}${vm.meta.district}` + (vm.reason ? `\n${vm.reason}` : ''));
+      box.append(h, b);
+      box.onclick = () => { select(vm.name); box.remove(); };
+      $('#toasts').appendChild(box);
+      setTimeout(() => box.remove(), 15000);
+    }
+
+    function notify(list, worst) {
+      if (!cfg.notify || !('Notification' in window) || Notification.permission !== 'granted') return;
+      const title = worst === 'red' ? `🔴 土石流警報 ×${list.length}` : `🟡 黃燈警示 ×${list.length}`;
+      try { new Notification(title, { body: list.slice(0, 5).map(v => v.name).join('、'), tag: 'dfm-alert' }); } catch (e) { }
+    }
+
+    /* ==========================================================
+       6. Map
+       ========================================================== */
+    function initMap() {
+      baseLayer = new ol.layer.Tile({
+        source: new ol.source.XYZ({ url: BASEMAPS[cfg.base].url, attributions: BASEMAPS[cfg.base].attr })
+      });
+      camSource = new ol.source.Vector();
+      camLayer = new ol.layer.Vector({ source: camSource });
+
+      map = new ol.Map({
+        target: 'map',
+        layers: [baseLayer, camLayer],
+        view: new ol.View({ center: ol.proj.fromLonLat([120.9, 23.7]), zoom: 7.4 }),
+        controls: ol.control.defaults.defaults({ rotate: false })
+      });
+
+      for (const [name, m] of S.byName) {
+        if (isNaN(m.lon) || isNaN(m.lat)) continue;
+        const f = new ol.Feature({ geometry: new ol.geom.Point(ol.proj.fromLonLat([m.lon, m.lat])), camName: name });
+        f.setStyle(markerStyle('unknown', 'nodata', false, name));
+        camSource.addFeature(f);
+        m.feature = f;
+      }
+
+      map.on('click', e => {
+        const f = map.forEachFeatureAtPixel(e.pixel, x => x, { hitTolerance: 6 });
+        if (f) select(f.get('camName'));
+      });
+      map.on('pointermove', e => {
+        const hit = map.hasFeatureAtPixel(e.pixel, { hitTolerance: 6 });
+        map.getTargetElement().style.cursor = hit ? 'pointer' : '';
+      });
+
+      // The container can still measure 0 when the map is constructed (fonts
+      // settling, a restored wall layout, a background tab). Re-measure on the
+      // next frame so the view is never stuck at zero size.
+      requestAnimationFrame(() => { map.updateSize(); fitAll(); });
+      fitAll();
+    }
+
+    const styleCache = new Map();
+    function markerStyle(alert, link, selected, name) {
+      const showLabel = S.showLabels && (alert === 'red' || alert === 'yellow' || link === 'offline' || selected);
+      const key = [alert, link, selected, showLabel ? name : ''].join('|');
+      if (styleCache.has(key)) return styleCache.get(key);
+
+      const colors = { red: '#ff4d4f', yellow: '#fbbf24', green: '#22c55e', unknown: '#7c8aa0' };
+      const dead = link === 'offline' || link === 'nodata';
+      const fill = dead ? '#7c8aa0' : (colors[alert] || colors.unknown);
+      const r = alert === 'red' ? 11 : alert === 'yellow' ? 9 : dead ? 8 : 6;
+
+      // z-order is fully determined by the cache key, so sharing one Style
+      // object between identical markers stays correct.
+      const z = selected ? 500 : alert === 'red' ? 400 : alert === 'yellow' ? 300 : dead ? 200 : 100;
+
+      const st = new ol.style.Style({
+        zIndex: z,
+        image: new ol.style.Circle({
+          radius: r,
+          fill: new ol.style.Fill({ color: fill }),
+          stroke: new ol.style.Stroke({
+            color: selected ? '#38bdf8' : 'rgba(255,255,255,.85)',
+            width: selected ? 4 : (dead ? 1.5 : 2),
+            lineDash: dead ? [3, 3] : undefined
+          })
+        }),
+        text: showLabel ? new ol.style.Text({
+          text: name.length > 9 ? name.slice(0, 9) + '…' : name,
+          offsetY: -(r + 10),
+          font: '700 12px "Noto Sans TC", sans-serif',
+          fill: new ol.style.Fill({ color: cfg.theme === 'dark' ? '#f8fafc' : '#0f172a' }),
+          stroke: new ol.style.Stroke({ color: cfg.theme === 'dark' ? 'rgba(0,0,0,.85)' : 'rgba(255,255,255,.9)', width: 3 })
+        }) : undefined
+      });
+      styleCache.set(key, st);
+      return st;
+    }
+
+    function updateMap() {
+      for (const vm of S.view) {
+        const f = vm.meta.feature;
+        if (!f) continue;
+        f.setStyle(markerStyle(vm.alert, vm.link, S.selected === vm.name, vm.name));
+      }
+      syncPulses();
+    }
+
+    function syncPulses() {
+      const want = new Set(S.view.filter(v => v.alert === 'red' && !v.acked && v.meta.feature).map(v => v.name));
+      for (const [name, ov] of pulses) {
+        if (!want.has(name)) { map.removeOverlay(ov); pulses.delete(name); }
+      }
+      for (const name of want) {
+        if (pulses.has(name)) continue;
+        const m = S.byName.get(name);
+        const ov = new ol.Overlay({
+          element: el('div', 'pulse'),
+          position: ol.proj.fromLonLat([m.lon, m.lat]),
+          stopEvent: false
+        });
+        map.addOverlay(ov);
+        pulses.set(name, ov);
+      }
+    }
+
+    function fitAll() {
+      const ext = camSource.getExtent();
+      if (ext && !ol.extent.isEmpty(ext)) map.getView().fit(ext, { padding: [60, 60, 60, 60], duration: 600, maxZoom: 12 });
+    }
+
+    function flyTo(name, zoom) {
+      const m = S.byName.get(name);
+      if (!m || isNaN(m.lon)) return;
+      map.getView().animate({ center: ol.proj.fromLonLat([m.lon, m.lat]), zoom: zoom || 13, duration: 700 });
+    }
+
+    /* ==========================================================
+       7. Rendering — KPIs, queue, feed, wall
+       ========================================================== */
+    function renderAll() {
+      renderKpis();
+      renderQueue();
+      renderFeed();
+      renderDetail();
+      renderWall();
+      updateMap();
+      renderConn();
+    }
+
+    function renderKpis() {
+      // A camera that stopped reporting is not "normal", whatever its last
+      // light said — it is counted as 停更/離線 so a dead feed can never sit
+      // quietly inside the green total.
+      const c = { red: 0, yellow: 0, offline: 0, green: 0 };
+      for (const v of S.view) {
+        if (v.alert === 'red') c.red++;
+        else if (v.link !== 'live') c.offline++;
+        else if (v.alert === 'yellow') c.yellow++;
+        else c.green++;
+      }
+      $('#kpi-red').textContent = c.red;
+      $('#kpi-yellow').textContent = c.yellow;
+      $('#kpi-offline').textContent = c.offline;
+      $('#kpi-green').textContent = c.green;
+      const redPill = document.querySelector('.kpi.red');
+      redPill.dataset.hot = (c.red > 0 && S.view.some(v => v.alert === 'red' && !v.acked)) ? '1' : '0';
+      document.title = (c.red ? `🔴 ${c.red} ` : c.yellow ? `🟡 ${c.yellow} ` : '') + '土石流監測值班台';
+    }
+
+    function renderConn() {
+      const conn = $('#conn'), txt = $('#conn-txt');
+      const bad = S.failures > 0;
+      conn.className = 'conn ' + (bad ? 'bad' : 'ok');
+      txt.textContent = bad ? `連線中斷（重試 ${S.failures}）` : '連線正常';
+
+      const ages = S.view.map(v => v.ageSec).filter(a => a != null);
+      const freshest = ages.length ? Math.min(...ages) : null;
+      $('#data-age').textContent = freshest == null ? '尚無影像資料' : '最新影像 ' + fmtAge(freshest);
+
+      let banner = $('#offline-banner');
+      if (S.failures >= 3 && !banner) {
+        banner = el('div', 'banner', '⚠ 無法連線到監測伺服器，畫面資料可能已過期');
+        banner.id = 'offline-banner';
+        document.body.appendChild(banner);
+      } else if (S.failures === 0 && banner) banner.remove();
+    }
+
+    function passesFilter(vm, q) {
+      if (S.kpiFilter) {
+        if (S.kpiFilter === 'red' && vm.alert !== 'red') return false;
+        if (S.kpiFilter === 'offline' && !(vm.alert !== 'red' && vm.link !== 'live')) return false;
+        if (S.kpiFilter === 'yellow' && !(vm.alert === 'yellow' && vm.link === 'live')) return false;
+        if (S.kpiFilter === 'green' && !(vm.alert === 'green' && vm.link === 'live')) return false;
+      }
+      if (q) {
+        const hay = (vm.name + ' ' + vm.meta.county + ' ' + vm.meta.district + ' ' + vm.meta.place).toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    }
+
+    // Section membership mirrors the KPI counters exactly, so a number in the
+    // header always leads to the same set of rows when clicked.
+    const SECTIONS = [
+      { id: 'red', title: '🔴 紅燈警報', cls: 's-red', test: v => v.alert === 'red' },
+      { id: 'offline', title: '⚫ 停更 / 離線', cls: 's-offline', test: v => v.alert !== 'red' && v.link !== 'live' },
+      { id: 'yellow', title: '🟡 黃燈警示', cls: 's-yellow', test: v => v.alert === 'yellow' && v.link === 'live' },
+      { id: 'green', title: '🟢 正常回報', cls: 's-green', test: v => v.link === 'live' && v.alert !== 'red' && v.alert !== 'yellow' }
+    ];
+    const collapsed = new Set(readLS(LS + '.collapsed', ['green']));
+    const rowCache = new Map();
+
+    function renderQueue() {
+      const q = $('#q-search').value.trim().toLowerCase();
+      const list = S.view.filter(v => passesFilter(v, q));
+      const box = $('#queue');
+      box.textContent = '';
+
+      let shown = 0;
+      for (const sec of SECTIONS) {
+        let items = list.filter(sec.test);
+        // "異常優先" keeps the green section as a one-line summary so 60
+        // healthy stations cannot bury the two that need attention.
+        const summarise = cfg.abnormalOnly && sec.id === 'green' && !q && !S.kpiFilter;
+        // A search is an explicit request to see matches, so it overrides
+        // whatever the operator had folded away.
+        const isShut = !q && (collapsed.has(sec.id) || summarise);
+        if (!items.length) continue;
+
+        const head = el('div', 'sec-head ' + sec.cls);
+        head.append(el('span', 'caret', '▾'), el('span', null, sec.title), el('span', 'n', items.length));
+        if (isShut) head.classList.add('collapsed');
+        head.onclick = () => {
+          if (summarise) {
+            // Expanding the summarised green section is the same intent as
+            // turning "異常優先" off; do that instead of fighting it.
+            cfg.abnormalOnly = false;
+            collapsed.delete(sec.id);
+            saveCfg();
+            syncControls();
+          } else if (collapsed.has(sec.id)) {
+            collapsed.delete(sec.id);
+          } else {
+            collapsed.add(sec.id);
+          }
+          writeLS(LS + '.collapsed', [...collapsed]);
+          renderQueue();
+        };
+        box.appendChild(head);
+
+        if (isShut) continue;
+        for (const vm of items) { box.appendChild(queueRow(vm)); shown++; }
+      }
+
+      if (!shown && !list.length) {
+        const e = el('div', 'empty');
+        e.append(el('span', 'big', '✅'), document.createTextNode(q ? '沒有符合搜尋條件的攝影機' : '目前沒有需要注意的站點'));
+        box.appendChild(e);
+      }
+      $('#q-count').textContent = list.length + ' / ' + S.view.length;
+    }
+
+    function queueRow(vm) {
+      let row = rowCache.get(vm.name);
+      if (!row) {
+        row = el('div', 'q-row');
+        row.innerHTML =
+          '<div class="q-bar"></div>' +
+          '<div class="q-thumb"><div class="ph">📷</div><img alt="" loading="lazy"></div>' +
+          '<div class="q-main"><div class="q-name"></div><div class="q-meta"></div><div class="q-reason"></div></div>' +
+          '<div class="q-right"></div>';
+        row._img = row.querySelector('img');
+        row._ph = row.querySelector('.ph');
+        row._name = row.querySelector('.q-name');
+        row._meta = row.querySelector('.q-meta');
+        row._reason = row.querySelector('.q-reason');
+        row._right = row.querySelector('.q-right');
+        row._name.textContent = vm.name;
+        row._img.onload = () => { row._ph.style.display = 'none'; };
+        row._img.onerror = () => { row._ph.style.display = ''; row._ph.textContent = '⚠'; };
+        row.onclick = () => select(vm.name);
+        rowCache.set(vm.name, row);
+      }
+
+      row.className = 'q-row a-' + vm.alert + (S.selected === vm.name ? ' sel' : '');
+      row._meta.textContent = `${vm.meta.county}${vm.meta.district}`;
+      if (vm.reason) { row._reason.textContent = '⚠ ' + vm.reason; row._reason.style.display = ''; }
+      else row._reason.style.display = 'none';
+
+      const latest = vm.images[vm.images.length - 1];
+      const src = latest ? (cfg.raw ? latest.raw : latest.annotated) : '';
+      if (src && row._img.getAttribute('src') !== src) row._img.src = src;
+      if (!src) { row._img.removeAttribute('src'); row._ph.style.display = ''; row._ph.textContent = '📷'; }
+
+      row._right.textContent = '';
+      const b = el('span', 'badge ' + (vm.alert === 'unknown' ? 'gray' : vm.alert));
+      b.append(el('span', null, ALERT_ICON[vm.alert]), el('span', null, vm.alert.toUpperCase()));
+      row._right.appendChild(b);
+      if (vm.link !== 'live') {
+        row._right.appendChild(el('span', 'badge gray', LINK_TW[vm.link]));
+      }
+      if (vm.acked) row._right.appendChild(el('span', 'badge ack', '✓ 已確認'));
+      const age = el('span', 'q-age' + (vm.link === 'offline' || vm.link === 'nodata' ? ' offline' : vm.link === 'stale' ? ' stale' : ''), fmtAge(vm.ageSec));
+      row._right.appendChild(age);
+      return row;
+    }
+
+    let feedRendered = -1;
+    function renderFeed() {
+      const body = $('#feed-body');
+      $('#ev-count').textContent = S.events.length;
+      // Rebuilding an unchanged feed on every poll would throw away the
+      // operator's scroll position while they are reading it.
+      if (!S.events.length || S.events.length === feedRendered) return;
+      feedRendered = S.events.length;
+      body.textContent = '';
+      for (const ev of S.events) {
+        const row = el('div', 'ev lv-' + (ev.level === 'red' ? 'red' : ev.level === 'yellow' ? 'yellow' : 'none'));
+        row.append(
+          el('span', 'ev-t', fmtClock(ev.ts)),
+          el('span', 'arrow', ALERT_ICON[ev.level] || '·'),
+          (() => { const c = el('span', 'ev-cam', ev.cam); return c; })(),
+          el('span', 'ev-msg', ev.msg)
+        );
+        row.onclick = () => select(ev.cam);
+        body.appendChild(row);
+      }
+    }
+
+    /* ==========================================================
+       8. Detail panel
+       ========================================================== */
+    function select(name) {
+      if (!S.byName.has(name)) return;
+      S.selected = name;
+      S.frame.idx = -1;      // -1 => track the newest frame
+      renderDetail(true);
+      renderQueue();
+      updateMap();
+      flyTo(name, Math.max(map.getView().getZoom(), 11));
+      if ($('#app').dataset.mode === 'wall') setMode('console');
+    }
+
+    let detailBuilt = null;
+    function renderDetail(force) {
+      const box = $('#detail');
+      const vm = S.selected ? S.viewByName.get(S.selected) : null;
+
+      if (!vm) {
+        if (detailBuilt !== null) {
+          box.textContent = '';
+          const e = el('div', 'empty'); e.style.marginTop = '4rem';
+          e.append(el('span', 'big', '👈'), document.createTextNode('從左側佇列或地圖選擇一台攝影機'));
+          box.appendChild(e);
+          detailBuilt = null;
+        }
+        return;
+      }
+
+      if (detailBuilt !== vm.name || force) { buildDetail(box, vm); detailBuilt = vm.name; }
+      updateDetail(vm);
+    }
+
+    function buildDetail(box, vm) {
+      box.textContent = '';
+
+      const head = el('div', 'd-head');
+      const nm = el('div', 'd-name');
+      const a = el('a', null, vm.name);
+      a.href = vm.meta.src || '#'; a.target = '_blank'; a.rel = 'noopener'; a.title = '開啟原始 CCTV 站台';
+      nm.appendChild(a);
+      head.append(nm, el('div', 'd-loc', `${vm.meta.county}${vm.meta.district}｜${vm.meta.place}`));
+      box.appendChild(head);
+
+      const st = el('div', 'd-status');
+      st.id = 'd-status';
+      st.innerHTML = '<div class="s-icon"></div><div class="s-txt"><div class="s-lv"></div><div class="s-sub"></div></div>';
+      box.appendChild(st);
+
+      const frame = el('div', 'frame');
+      frame.innerHTML =
+        '<img id="d-img" alt="偵測影像">' +
+        '<div class="f-empty hidden" id="d-empty">尚無影像</div>' +
+        '<span class="badge f-lv" id="d-flv"></span>' +
+        '<div class="f-stamp" id="d-stamp">—</div>' +
+        '<button class="f-nav prev" id="d-prev">‹</button>' +
+        '<button class="f-nav next" id="d-next">›</button>';
+      box.appendChild(frame);
+
+      const ctrl = el('div', 'f-ctrl');
+      ctrl.innerHTML =
+        '<input type="range" id="d-range" min="0" max="0" value="0" step="1">' +
+        '<span class="cnt" id="d-cnt">0/0</span>';
+      box.appendChild(ctrl);
+
+      // Current composition
+      const s1 = el('div', 'sec');
+      s1.appendChild(el('div', 'sec-title', '本幀判定成分（占比 / 信心）'));
+      const bars = el('div', 'bars');
+      for (const l of LABELS) {
+        const r = el('div', 'bar-row');
+        r.innerHTML =
+          `<div class="bar-lab"><span class="sw" style="background:${LABEL_COLOR[l]}"></span>${LABEL_TW[l]}</div>` +
+          `<div class="bar-track"><div class="bar-fill" data-fill="${l}" style="background:${LABEL_COLOR[l]}"></div></div>` +
+          `<div class="bar-val"><span data-prop="${l}">0%</span><br><span class="bar-conf" data-conf="${l}">0.00</span></div>`;
+        bars.appendChild(r);
+      }
+      s1.appendChild(bars);
+      box.appendChild(s1);
+
+      // Session trend
+      const s2 = el('div', 'sec');
+      const t2 = el('div', 'sec-title');
+      t2.append(el('span', null, '本次連線趨勢（像素占比）'), el('span', 'spacer'), el('span', null, ''));
+      s2.appendChild(t2);
+      const cb = el('div', 'chart-box');
+      cb.innerHTML = '<canvas id="d-chart"></canvas>';
+      s2.appendChild(cb);
+      const lg = el('div', 'legend');
+      for (const l of LABELS) {
+        const chip = el('div', 'lg-chip' + (S.chartVis[l] ? '' : ' off'));
+        chip.innerHTML = `<span class="sw" style="background:${LABEL_COLOR[l]}"></span>${LABEL_TW[l]}`;
+        chip.onclick = () => { S.chartVis[l] = !S.chartVis[l]; chip.classList.toggle('off', !S.chartVis[l]); drawChart(vm); };
+        lg.appendChild(chip);
+      }
+      s2.appendChild(lg);
+      box.appendChild(s2);
+
+      // Metadata
+      const s3 = el('div', 'sec');
+      s3.appendChild(el('div', 'sec-title', '站點資訊'));
+      const dl = el('dl', 'kv');
+      dl.id = 'd-kv';
+      s3.appendChild(dl);
+      box.appendChild(s3);
+
+      // Actions
+      const acts = el('div', 'd-actions');
+      const bAck = el('button', 'act primary', '✓ 確認警報');
+      bAck.id = 'd-ack';
+      bAck.onclick = () => {
+        const cur = S.viewByName.get(S.selected);
+        if (!cur) return;
+        if (S.acks.get(cur.name) === cur.alert) S.acks.delete(cur.name); else S.acks.set(cur.name, cur.alert);
+        saveAcks(); derive(); renderAll();
+      };
+      const bLoc = el('button', 'act', '📍 地圖定位');
+      bLoc.onclick = () => flyTo(S.selected, 14);
+      const bSrc = el('button', 'act', '🔗 原始站台');
+      bSrc.onclick = () => { const m = S.byName.get(S.selected); if (m && m.src) window.open(m.src, '_blank', 'noopener'); };
+      const bRaw = el('button', 'act', cfg.raw ? '🖼 顯示標註' : '🖼 顯示原始');
+      bRaw.id = 'd-raw';
+      bRaw.onclick = () => { cfg.raw = !cfg.raw; saveCfg(); syncControls(); renderAll(); };
+      acts.append(bAck, bLoc, bSrc, bRaw);
+      box.appendChild(acts);
+
+      $('#d-prev').onclick = () => stepFrame(-1);
+      $('#d-next').onclick = () => stepFrame(1);
+      $('#d-range').oninput = function () { S.frame.playing = false; syncPlayBtn(); showFrame(parseInt(this.value, 10)); };
+      $('#d-img').onerror = () => { $('#d-empty').classList.remove('hidden'); $('#d-empty').textContent = '影像載入失敗'; };
+      $('#d-img').onload = () => { $('#d-empty').classList.add('hidden'); };
+    }
+
+    function updateDetail(vm) {
+      const st = $('#d-status');
+      if (!st) return;
+      st.className = 'd-status a-' + vm.alert;
+      st.querySelector('.s-icon').textContent = ALERT_ICON[vm.alert];
+      st.querySelector('.s-lv').textContent = ALERT_TW[vm.alert] + (vm.acked ? '（已確認）' : '');
+      const sub = [];
+      sub.push(vm.link === 'live' ? `更新於 ${fmtAge(vm.ageSec)}` : `${LINK_TW[vm.link]}・最後回報 ${fmtAge(vm.ageSec)}`);
+      if (vm.reason) sub.push(vm.reason);
+      if (vm.overlap) sub.push('濁水與清水區域重疊');
+      st.querySelector('.s-sub').textContent = sub.join('｜');
+
+      const ackBtn = $('#d-ack');
+      if (ackBtn) {
+        ackBtn.textContent = vm.acked ? '↺ 取消確認' : '✓ 確認警報';
+        ackBtn.className = 'act ' + (vm.acked ? '' : 'primary');
+      }
+      const rawBtn = $('#d-raw');
+      if (rawBtn) rawBtn.textContent = cfg.raw ? '🖼 顯示標註' : '🖼 顯示原始';
+
+      // Frame sequence
+      S.frame.seq = vm.images;
+      const rng = $('#d-range');
+      rng.max = Math.max(0, vm.images.length - 1);
+      if (S.frame.idx < 0 || S.frame.idx > vm.images.length - 1) S.frame.idx = vm.images.length - 1;
+      showFrame(S.frame.idx);
+
+      // Composition bars
+      for (const l of LABELS) {
+        const p = vm.prop[l] || 0, c = vm.conf[l] || 0;
+        const fill = document.querySelector(`[data-fill="${l}"]`);
+        if (fill) fill.style.width = Math.min(100, p * 100) + '%';
+        const pv = document.querySelector(`[data-prop="${l}"]`);
+        if (pv) pv.textContent = pct(p);
+        const cv = document.querySelector(`[data-conf="${l}"]`);
+        if (cv) cv.textContent = c ? c.toFixed(2) : '—';
+      }
+
+      // Metadata
+      const kv = $('#d-kv');
+      if (kv) {
+        kv.textContent = '';
+        const rows = [
+          ['縣市 / 行政區', `${vm.meta.county} ${vm.meta.district}`],
+          ['架設地點', vm.meta.place || '—'],
+          ['座標', isNaN(vm.meta.lon) ? '—' : `${vm.meta.lon.toFixed(5)}, ${vm.meta.lat.toFixed(5)}`],
+          ['最後判讀時間', vm.ts ? vm.ts.toLocaleString('zh-TW', { hour12: false }) : '—'],
+          ['連線狀態', LINK_TW[vm.link]],
+          ['本次樣本數', String((S.series.get(vm.name) || []).length)]
+        ];
+        for (const [k, v] of rows) { kv.append(el('dt', null, k), el('dd', null, v)); }
+      }
+
+      drawChart(vm);
+    }
+
+    function showFrame(i) {
+      const seq = S.frame.seq;
+      const img = $('#d-img'), empty = $('#d-empty');
+      if (!img) return;
+      if (!seq.length) {
+        img.removeAttribute('src');
+        empty.classList.remove('hidden');
+        empty.textContent = '尚無影像';
+        $('#d-cnt').textContent = '0/0';
+        $('#d-stamp').textContent = '—';
+        $('#d-flv').textContent = '';
+        return;
+      }
+      const n = seq.length;
+      S.frame.idx = ((i % n) + n) % n;
+      const f = seq[S.frame.idx];
+      const src = cfg.raw ? f.raw : f.annotated;
+      if (img.getAttribute('src') !== src) img.src = src;
+      $('#d-range').value = S.frame.idx;
+      $('#d-cnt').textContent = (S.frame.idx + 1) + '/' + n;
+      $('#d-stamp').textContent = f.label + (cfg.raw ? '　原始' : '　AI 標註');
+      const lv = $('#d-flv');
+      lv.className = 'badge f-lv ' + (f.alert === 'unknown' ? 'gray' : f.alert);
+      lv.textContent = (ALERT_ICON[f.alert] || '') + ' ' + f.alert.toUpperCase();
+    }
+
+    function stepFrame(d) { S.frame.playing = false; syncPlayBtn(); showFrame(S.frame.idx + d); }
+    function syncPlayBtn() { $('#btn-play').textContent = S.frame.playing ? '⏸ 暫停' : '▶ 播放'; }
+
+    /* ==========================================================
+       9. Trend chart (canvas)
+       ========================================================== */
+    function drawChart(vm) {
+      const cv = $('#d-chart');
+      if (!cv) return;
+      const rect = cv.getBoundingClientRect();
+      if (!rect.width) return;
+      const dpr = window.devicePixelRatio || 1;
+      cv.width = rect.width * dpr; cv.height = rect.height * dpr;
+      const ctx = cv.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const W = rect.width, H = rect.height;
+      ctx.clearRect(0, 0, W, H);
+
+      const css = getComputedStyle(document.documentElement);
+      const line = css.getPropertyValue('--line-strong').trim() || 'rgba(148,163,184,.3)';
+      const fg3 = css.getPropertyValue('--fg-3').trim() || '#64748b';
+
+      const data = S.series.get(vm.name) || [];
+      const PL = 30, PR = 6, PT = 8, PB = 16;
+      const w = W - PL - PR, h = H - PT - PB;
+
+      // Axes
+      ctx.strokeStyle = line; ctx.lineWidth = 1; ctx.font = '10px "JetBrains Mono", monospace'; ctx.fillStyle = fg3;
+      for (let i = 0; i <= 4; i++) {
+        const y = PT + h * i / 4;
+        ctx.beginPath(); ctx.moveTo(PL, y); ctx.lineTo(PL + w, y); ctx.stroke();
+        ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+        ctx.fillText((100 - i * 25) + '%', PL - 4, y);
+      }
+
+      if (data.length < 2) {
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('累積樣本中…（本頁開啟後開始記錄）', PL + w / 2, PT + h / 2);
+        return;
+      }
+
+      const t0 = data[0].t, t1 = data[data.length - 1].t;
+      const span = Math.max(1, t1 - t0);
+      const X = t => PL + w * (t - t0) / span;
+      const Y = v => PT + h * (1 - Math.min(1, Math.max(0, v)));
+
+      // Alert bands behind the lines: where the light was not green.
+      for (let i = 1; i < data.length; i++) {
+        const a = data[i].alert;
+        if (a !== 'red' && a !== 'yellow') continue;
+        ctx.fillStyle = a === 'red' ? 'rgba(255,77,79,.16)' : 'rgba(251,191,36,.14)';
+        ctx.fillRect(X(data[i - 1].t), PT, Math.max(1, X(data[i].t) - X(data[i - 1].t)), h);
+      }
+
+      // Series
+      for (const l of LABELS) {
+        if (!S.chartVis[l]) continue;
+        ctx.strokeStyle = css.getPropertyValue(LABEL_COLOR[l].replace('var(', '').replace(')', '')).trim() || '#888';
+        ctx.lineWidth = 1.8; ctx.lineJoin = 'round';
+        ctx.beginPath();
+        data.forEach((d, i) => {
+          const x = X(d.t), y = Y((d.prop && d.prop[l]) || 0);
+          i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+        });
+        ctx.stroke();
+      }
+
+      // Time axis labels
+      ctx.fillStyle = fg3; ctx.textBaseline = 'top'; ctx.textAlign = 'left';
+      ctx.fillText(fmtClock(new Date(t0)).slice(0, 5), PL, PT + h + 3);
+      ctx.textAlign = 'right';
+      ctx.fillText(fmtClock(new Date(t1)).slice(0, 5), PL + w, PT + h + 3);
+    }
+
+    /* ==========================================================
+       10. Wall view
+       ========================================================== */
+    const tileCache = new Map();
+    function renderWall() {
+      if ($('#wall-shell').classList.contains('hidden')) return;
+      const q = $('#w-search').value.trim().toLowerCase();
+      const grid = $('#wall');
+      let list = S.view.filter(v => passesFilter(v, q));
+      if (cfg.abnormalOnly) list = list.slice().sort((a, b) => a.rank - b.rank);
+
+      grid.textContent = '';
+      for (const vm of list) grid.appendChild(wallTile(vm));
+      if (!list.length) {
+        const e = el('div', 'empty'); e.style.gridColumn = '1 / -1';
+        e.append(el('span', 'big', '🔍'), document.createTextNode('沒有符合條件的攝影機'));
+        grid.appendChild(e);
+      }
+    }
+
+    function wallTile(vm) {
+      let t = tileCache.get(vm.name);
+      if (!t) {
+        t = el('div', 'tile');
+        t.innerHTML =
+          '<div class="tile-img"><img alt="" loading="lazy"><div class="ph">📷 無影像</div>' +
+          '<span class="badge t-lv"></span><span class="t-age"></span></div>' +
+          '<div class="tile-cap"><div class="tile-name"></div><div class="tile-sub"></div></div>';
+        t._img = t.querySelector('img'); t._ph = t.querySelector('.ph');
+        t._lv = t.querySelector('.t-lv'); t._age = t.querySelector('.t-age');
+        t._nm = t.querySelector('.tile-name'); t._sub = t.querySelector('.tile-sub');
+        t._nm.textContent = vm.name;
+        t._img.onload = () => { t._ph.style.display = 'none'; };
+        t._img.onerror = () => { t._ph.style.display = ''; };
+        t.onclick = () => select(vm.name);
+        tileCache.set(vm.name, t);
+      }
+      t.className = 'tile a-' + vm.alert + ' link-' + vm.link;
+      const latest = vm.images[vm.images.length - 1];
+      const src = latest ? (cfg.raw ? latest.raw : latest.annotated) : '';
+      if (src && t._img.getAttribute('src') !== src) t._img.src = src;
+      if (!src) { t._img.removeAttribute('src'); t._ph.style.display = ''; }
+      t._lv.className = 'badge t-lv ' + (vm.alert === 'unknown' ? 'gray' : vm.alert);
+      t._lv.textContent = ALERT_ICON[vm.alert] + ' ' + vm.alert.toUpperCase();
+      t._age.textContent = fmtAge(vm.ageSec);
+      t._sub.textContent = `${vm.meta.county}${vm.meta.district}` + (vm.link !== 'live' ? `・${LINK_TW[vm.link]}` : '') + (vm.reason ? `・${vm.reason}` : '');
+      return t;
+    }
+
+    /* ==========================================================
+       11. View modes, controls, keyboard
+       ========================================================== */
+    function setMode(mode) {
+      const app = $('#app'), wall = $('#wall-shell');
+      document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.mode === mode));
+      if (mode === 'wall') {
+        app.classList.add('hidden'); wall.classList.remove('hidden');
+        renderWall();
+      } else {
+        wall.classList.add('hidden'); app.classList.remove('hidden');
+        app.dataset.mode = mode;
+        setTimeout(() => { map.updateSize(); const vm = S.selected && S.viewByName.get(S.selected); if (vm) drawChart(vm); }, 60);
+      }
+      cfg.mode = mode; saveCfg();
+    }
+
+    function syncControls() {
+      document.querySelectorAll('#seg-zoom button').forEach(b => b.classList.toggle('active', b.dataset.v === cfg.zoom));
+      document.querySelectorAll('#seg-theme button').forEach(b => b.classList.toggle('active', b.dataset.v === cfg.theme));
+      document.querySelectorAll('#seg-base button').forEach(b => b.classList.toggle('active', b.dataset.v === cfg.base));
+      document.querySelectorAll('#seg-tile button').forEach(b => b.classList.toggle('active', +b.dataset.v === +cfg.tile));
+      $('#sw-raw').classList.toggle('on', cfg.raw);
+      $('#sw-sound').classList.toggle('on', cfg.sound);
+      $('#sw-notify').classList.toggle('on', cfg.notify);
+      $('#in-stale').value = cfg.staleMin;
+      $('#in-offline').value = cfg.offlineMin;
+      $('#in-poll').value = cfg.pollSec;
+      $('#btn-sound').textContent = cfg.sound ? '🔔' : '🔕';
+      $('#btn-sound').classList.toggle('on', cfg.sound);
+      $('#btn-abnormal').classList.toggle('on', cfg.abnormalOnly);
+      $('#w-abnormal').classList.toggle('on', cfg.abnormalOnly);
+      $('#btn-labels').classList.toggle('on', S.showLabels);
+      document.documentElement.dataset.zoom = cfg.zoom;
+      document.documentElement.dataset.theme = cfg.theme;
+      document.documentElement.style.setProperty('--tile', cfg.tile + 'rem');
+    }
+
+    function restartPolling() {
+      clearInterval(pollTimer);
+      pollTimer = setInterval(poll, Math.max(2, cfg.pollSec) * 1000);
+    }
+
+    function exportCsv() {
+      const head = ['camera', 'county', 'district', 'alert', 'link', 'timestamp', 'reason',
+        ...LABELS.map(l => l + '_prop'), ...LABELS.map(l => l + '_conf')];
+      const rows = S.view.map(v => [
+        v.name, v.meta.county, v.meta.district, v.alert, LINK_TW[v.link],
+        v.ts ? v.ts.toLocaleString('zh-TW', { hour12: false }) : '', v.reason,
+        ...LABELS.map(l => (v.prop[l] || 0).toFixed(4)), ...LABELS.map(l => (v.conf[l] || 0).toFixed(4))
+      ]);
+      const csv = '﻿' + [head, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+      const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+      const a = el('a'); a.href = url;
+      a.download = `debris_status_${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '')}.csv`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    }
+
+    function bindControls() {
+      // View tabs
+      $('#tabs').onclick = e => { const b = e.target.closest('.tab'); if (b) setMode(b.dataset.mode); };
+
+      // KPI pills act as filters
+      $('#kpis').onclick = e => {
+        const b = e.target.closest('.kpi'); if (!b) return;
+        const f = b.dataset.filter;
+        S.kpiFilter = S.kpiFilter === f ? null : f;
+        document.querySelectorAll('.kpi').forEach(k => k.setAttribute('aria-pressed', String(k.dataset.filter === S.kpiFilter)));
+        renderQueue(); renderWall();
+      };
+
+      $('#q-search').addEventListener('input', debounce(renderQueue, 180));
+      $('#w-search').addEventListener('input', debounce(renderWall, 180));
+      $('#btn-abnormal').onclick = () => { cfg.abnormalOnly = !cfg.abnormalOnly; saveCfg(); syncControls(); renderQueue(); };
+      $('#w-abnormal').onclick = () => { cfg.abnormalOnly = !cfg.abnormalOnly; saveCfg(); syncControls(); renderWall(); };
+
+      // Map tools
+      $('#btn-fit').onclick = fitAll;
+      $('#btn-labels').onclick = () => {
+        S.showLabels = !S.showLabels; cfg.labels = S.showLabels; saveCfg();
+        styleCache.clear(); syncControls(); updateMap();
+      };
+      $('#btn-next-alert').onclick = jumpNextAlert;
+
+      // Feed
+      $('#btn-feed').onclick = () => {
+        const f = $('#feed'); f.classList.toggle('collapsed');
+        $('#btn-feed').textContent = f.classList.contains('collapsed') ? '▴' : '▾';
+        setTimeout(() => map.updateSize(), 60);
+      };
+      $('#btn-clear-ev').onclick = () => {
+        S.events = [];
+        feedRendered = -1;
+        const b = $('#feed-body');
+        b.textContent = '';
+        const e = el('div', 'empty'); e.style.padding = '1rem';
+        e.append(el('span', 'big', '🕓'), document.createTextNode('事件已清除'));
+        b.appendChild(e);
+        $('#ev-count').textContent = '0';
+      };
+
+      // Detail playback
+      $('#btn-play').onclick = () => { S.frame.playing = !S.frame.playing; syncPlayBtn(); };
+
+      // Header buttons
+      $('#btn-sound').onclick = () => { cfg.sound = !cfg.sound; saveCfg(); syncControls(); if (cfg.sound) alarm('yellow'); };
+      $('#btn-full').onclick = () => {
+        if (document.fullscreenElement) document.exitFullscreen();
+        else document.documentElement.requestFullscreen().catch(() => { });
+      };
+      $('#btn-settings').onclick = e => { e.stopPropagation(); $('#settings').classList.toggle('hidden'); };
+      document.addEventListener('click', e => {
+        const p = $('#settings');
+        if (!p.classList.contains('hidden') && !p.contains(e.target) && e.target !== $('#btn-settings')) p.classList.add('hidden');
+      });
+
+      // Settings
+      $('#seg-zoom').onclick = e => { const b = e.target.closest('button'); if (!b) return; cfg.zoom = b.dataset.v; saveCfg(); syncControls(); setTimeout(() => { map.updateSize(); const vm = S.selected && S.viewByName.get(S.selected); if (vm) drawChart(vm); }, 80); };
+      $('#seg-theme').onclick = e => { const b = e.target.closest('button'); if (!b) return; cfg.theme = b.dataset.v; saveCfg(); styleCache.clear(); syncControls(); updateMap(); const vm = S.selected && S.viewByName.get(S.selected); if (vm) drawChart(vm); };
+      $('#seg-base').onclick = e => {
+        const b = e.target.closest('button'); if (!b) return;
+        cfg.base = b.dataset.v; saveCfg(); syncControls();
+        baseLayer.setSource(new ol.source.XYZ({ url: BASEMAPS[cfg.base].url, attributions: BASEMAPS[cfg.base].attr }));
+      };
+      $('#seg-tile').onclick = e => { const b = e.target.closest('button'); if (!b) return; cfg.tile = +b.dataset.v; saveCfg(); syncControls(); };
+      $('#sw-raw').onclick = () => { cfg.raw = !cfg.raw; saveCfg(); syncControls(); renderAll(); };
+      $('#sw-sound').onclick = () => { cfg.sound = !cfg.sound; saveCfg(); syncControls(); if (cfg.sound) alarm('yellow'); };
+      $('#sw-notify').onclick = async () => {
+        if (!cfg.notify && 'Notification' in window && Notification.permission !== 'granted') {
+          const p = await Notification.requestPermission();
+          if (p !== 'granted') { syncControls(); return; }
+        }
+        cfg.notify = !cfg.notify; saveCfg(); syncControls();
+      };
+      $('#in-stale').onchange = e => { cfg.staleMin = Math.max(1, +e.target.value || 5); saveCfg(); derive(); renderAll(); };
+      $('#in-offline').onchange = e => { cfg.offlineMin = Math.max(2, +e.target.value || 15); saveCfg(); derive(); renderAll(); };
+      $('#in-poll').onchange = e => { cfg.pollSec = Math.max(2, +e.target.value || 5); saveCfg(); restartPolling(); };
+      $('#btn-export').onclick = exportCsv;
+      $('#btn-ackall').onclick = () => {
+        S.view.filter(v => v.alert === 'red' || v.alert === 'yellow').forEach(v => S.acks.set(v.name, v.alert));
+        saveAcks(); derive(); renderAll();
+      };
+      $('#btn-reset').onclick = () => {
+        localStorage.removeItem(LS); localStorage.removeItem(LS + '.acks'); localStorage.removeItem(LS + '.collapsed');
+        location.reload();
+      };
+
+      // Panel resizers
+      document.querySelectorAll('.resizer').forEach(rz => {
+        rz.addEventListener('mousedown', e => {
+          e.preventDefault();
+          const target = rz.dataset.target;
+          rz.classList.add('drag');
+          const move = ev => {
+            const w = target === 'queue' ? ev.clientX : window.innerWidth - ev.clientX;
+            const clamped = Math.max(220, Math.min(w, window.innerWidth * 0.4));
+            document.documentElement.style.setProperty(target === 'queue' ? '--col-queue' : '--col-detail', clamped + 'px');
+          };
+          const up = () => {
+            rz.classList.remove('drag');
+            document.removeEventListener('mousemove', move);
+            document.removeEventListener('mouseup', up);
+            map.updateSize();
+            const vm = S.selected && S.viewByName.get(S.selected); if (vm) drawChart(vm);
+          };
+          document.addEventListener('mousemove', move);
+          document.addEventListener('mouseup', up);
+        });
+      });
+
+      // Keyboard — a duty desk should not need the mouse.
+      document.addEventListener('keydown', e => {
+        if (e.target.matches('input, textarea')) {
+          if (e.key === 'Escape') e.target.blur();
+          return;
+        }
+        switch (e.key) {
+          case '1': setMode('console'); break;
+          case '2': setMode('wall'); break;
+          case '3': setMode('map'); break;
+          case '/': e.preventDefault(); $('#q-search').focus(); break;
+          case 'j': moveSelection(1); break;
+          case 'k': moveSelection(-1); break;
+          case 'n': case 'N': jumpNextAlert(); break;
+          case 'a': case 'A': { const b = $('#d-ack'); if (b) b.click(); break; }
+          case 'm': case 'M': $('#btn-sound').click(); break;
+          case 'f': case 'F': $('#btn-full').click(); break;
+          case 'ArrowLeft': if (S.selected) { e.preventDefault(); stepFrame(-1); } break;
+          case 'ArrowRight': if (S.selected) { e.preventDefault(); stepFrame(1); } break;
+          case 'Escape': $('#settings').classList.add('hidden'); break;
+        }
+      });
+    }
+
+    function moveSelection(d) {
+      const q = $('#q-search').value.trim().toLowerCase();
+      const list = S.view.filter(v => passesFilter(v, q));
+      if (!list.length) return;
+      const i = list.findIndex(v => v.name === S.selected);
+      const next = list[(((i < 0 ? 0 : i + d) % list.length) + list.length) % list.length];
+      select(next.name);
+      const row = rowCache.get(next.name);
+      if (row) row.scrollIntoView({ block: 'nearest' });
+    }
+
+    let alertCursor = 0;
+    function jumpNextAlert() {
+      const alerts = S.view.filter(v => v.rank <= 2);
+      if (!alerts.length) return;
+      alertCursor = alertCursor % alerts.length;
+      const vm = alerts[alertCursor++];
+      select(vm.name);
+      flyTo(vm.name, 13);
+    }
+
+    /* ==========================================================
+       12. Boot
+       ========================================================== */
+    function tickClock() {
+      $('#clock').textContent = fmtClock(new Date());
+    }
+
+    async function boot() {
+      syncControls();
+      bindControls();
+      syncPlayBtn();
+
+      try {
+        await loadCameras();
+      } catch (e) {
+        $('#queue').innerHTML = '<div class="empty"><span class="big">⚠</span>無法載入 cctv.json<br>請確認伺服器已啟動（python server.py）</div>';
+        console.error(e);
+        return;
+      }
+
+      initMap();
+      await poll();
+      restartPolling();
+
+      setInterval(tickClock, 1000);
+      tickClock();
+
+      // Advance the detail-panel image loop independently of polling so the
+      // playback speed does not change when the poll interval does.
+      frameTimer = setInterval(() => {
+        if (S.frame.playing && S.selected && S.frame.seq.length > 1 && $('#d-img')) showFrame(S.frame.idx + 1);
+      }, 1400);
+
+      // Ages are relative; refresh the "x 分前" labels between polls.
+      setInterval(() => { derive(); renderQueue(); renderConn(); if (!$('#wall-shell').classList.contains('hidden')) renderWall(); }, 15000);
+
+      window.addEventListener('resize', debounce(() => {
+        map.updateSize();
+        const vm = S.selected && S.viewByName.get(S.selected);
+        if (vm) drawChart(vm);
+      }, 150));
+
+      if (cfg.mode && cfg.mode !== 'console') setMode(cfg.mode);
+
+      // Deep link: console.html?cam=<name>
+      const want = new URLSearchParams(location.search).get('cam');
+      if (want && S.byName.has(want)) select(want);
+    }
+
+    window.addEventListener('load', boot);
+  </script>
+</body>
+
+</html>
