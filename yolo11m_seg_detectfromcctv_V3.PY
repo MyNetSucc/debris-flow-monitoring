@@ -314,10 +314,95 @@ hist_queues_raw      = defaultdict(deque)     # cam -> deque[(ts,url)] 原圖（
 prev_rock_boxes      = defaultdict(deque)     # cam -> deque[[x1,y1,x2,y2],...]*N
 prev_move_cnt        = defaultdict(int)       # cam -> 連續移動幀數
 alert_state          = defaultdict(lambda: ('green', 0.0))   # cam -> (level, expire_ts)
+red_since_ts         = defaultdict(float)     # cam -> 本次紅燈起始時間（0 = 非紅燈）
+report_ts            = defaultdict(deque)     # cam -> 最近成功回報時間，用來估回報節奏
 yellow_since_ts      = defaultdict(float)     # cam -> 黃燈起始時間
 last_muddy_seen_ts   = defaultdict(float)     # cam -> 最近看到 muddy 時間
 camera_status        = {}                     # 最新 camera_status.json 快取
 status_lock          = threading.Lock()       # camera_status 讀寫與檔案寫出的互斥鎖
+state_lock           = threading.Lock()       # alert_state 落地檔的互斥鎖
+
+# ── 警戒狀態持久化 ──────────────────────────────────────────────
+# alert_state 原本只活在記憶體裡，程序一重啟，HOLD_RED_SEC 的 24 小時紅燈鎖定
+# 就無聲消失——重開機、改參數、當機重跑都會。判定邏輯看起來仍然正常，實際上
+# 保護已經不見了。這裡把它落地，啟動時讀回。
+# expire_ts 存的是 time.time() 的絕對 epoch 秒，重啟後仍可直接比較。
+ALERT_STATE_FILE = str(Path(CAM_STATUS_JS).with_name('alert_state.json'))
+
+def save_alert_state():
+    """寫出 alert_state（原子置換）。只在燈號真的改變時呼叫，不是每幀。"""
+    with state_lock:
+        snapshot = {
+            'saved_at': time.time(),
+            'cameras': {
+                cam: {'level': lvl, 'expire': exp, 'redSince': red_since_ts.get(cam, 0.0)}
+                for cam, (lvl, exp) in list(alert_state.items())
+                if lvl == 'red' and exp
+            }
+        }
+        tmp = ALERT_STATE_FILE + '.tmp'
+        try:
+            with open(tmp, 'w', encoding='utf-8') as f:
+                json.dump(snapshot, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, ALERT_STATE_FILE)
+        except OSError as e:
+            log.error(f'寫出 {ALERT_STATE_FILE} 失敗: {e}')
+            try: os.remove(tmp)
+            except OSError: pass
+
+def load_alert_state():
+    """
+    啟動時讀回仍在鎖定中的紅燈。
+
+    ★ 這個函式必須 fail-open：檔案不存在、JSON 壞掉、欄位型別怪異，一律當作
+      「沒有前次狀態」繼續啟動。沒有這個檔案時系統本來就能正常運作，讓它變成
+      啟動的必要條件，等於拿可用性去換一致性，方向是錯的。
+    """
+    try:
+        with open(ALERT_STATE_FILE, encoding='utf-8') as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return
+    except Exception as e:
+        log.warning(f'{ALERT_STATE_FILE} 無法讀取（{e}），以空狀態啟動')
+        return
+
+    now = time.time()
+    restored = 0
+    for cam, rec in (data.get('cameras') or {}).items():
+        try:
+            if str(rec.get('level')) != 'red':
+                continue
+            exp = float(rec.get('expire') or 0.0)
+            if exp <= now:
+                continue          # 鎖定已到期，讓它重新判定
+            alert_state[cam] = ('red', exp)
+            red_since_ts[cam] = float(rec.get('redSince') or 0.0)
+            restored += 1
+        except (TypeError, ValueError):
+            continue              # 單筆壞掉就跳過，不影響其他攝影機
+    if restored:
+        log.info(f'自 {ALERT_STATE_FILE} 回復 {restored} 個仍在鎖定中的紅燈')
+
+def note_report(cam: str, ts: float) -> float:
+    """
+    記錄一次成功回報，回傳近期回報間隔的中位數（秒）。
+
+    網頁端用它判斷某站是不是「回報變慢／沒回報」。寫死秒數會在 --threads 或
+    --interval 一改就失準，所以基準線由知道真相的偵測端提供，門檻倍數留在前端。
+    取中位數而非平均，是因為偶爾一次逾時重試會把平均拉歪。
+    """
+    q = report_ts[cam]
+    q.append(ts)
+    while len(q) > 21:
+        q.popleft()
+    if len(q) < 3:
+        return 0.0
+    lst = list(q)
+    gaps = sorted(b - a for a, b in zip(lst, lst[1:]))
+    n = len(gaps)
+    med = gaps[n // 2] if n % 2 else (gaps[n // 2 - 1] + gaps[n // 2]) / 2
+    return round(med, 2)
 
 def write_camera_status(cam: str, entry: dict):
     """
@@ -559,6 +644,10 @@ def detect_once(cam, url, driver: webdriver.Chrome):
         if cur == 'red' and now < exp:
             alert = 'red'
             red_reason = camera_status.get(cam, {}).get('redReason','')
+            # 鎖定期間補回起始時間。exp 就是 start + HOLD_RED_SEC，所以這是精確
+            # 反推而非估計；沒有它，重啟後回復的紅燈會永遠說不出事件何時發生。
+            if not red_since_ts.get(cam):
+                red_since_ts[cam] = exp - HOLD_RED_SEC
         else:
             base = 'green' if (has_clear or (not has_muddy and not has_debris)) else 'yellow'
 
@@ -584,6 +673,7 @@ def detect_once(cam, url, driver: webdriver.Chrome):
 
             if go_red:
                 alert_state[cam] = ('red', now + HOLD_RED_SEC)
+                red_since_ts[cam] = now
                 alert = 'red'
                 red_reason = 'debris_flow' if has_debris else 'large_rock_move'
             else:
@@ -592,6 +682,8 @@ def detect_once(cam, url, driver: webdriver.Chrome):
                 if base == 'green' and cur == 'yellow' and (now - yellow_since_ts[cam] < MIN_YELLOW_SEC):
                     base = 'yellow'
                 alert_state[cam] = (base, 0.0)
+                if cur == 'red':
+                    red_since_ts.pop(cam, None)   # 鎖定到期，本次紅燈事件結束
                 alert = base
                 yellow_reason = ('muddy_vs_clear_overlap' if (base=='yellow' and overlap_mc) else
                                  'muddy_dominant' if base=='yellow' else '')
@@ -650,9 +742,21 @@ def detect_once(cam, url, driver: webdriver.Chrome):
         prop_out = {k: round(float(prop_now[k]), 4) for k in LABELS}
         conf_out = {k: round(float(conf_now[k]), 3) for k in LABELS}
 
+        # 紅燈的時間軸。timestamp 是「最後一次判讀」，每輪都會更新；沒有這兩個
+        # 欄位的話，凌晨鎖定的紅燈和此刻正在發生的紅燈在網頁上長得一模一樣。
+        _lvl, _exp = alert_state[cam]
+        _since = red_since_ts.get(cam, 0.0)
+        red_since_str  = (datetime.fromtimestamp(_since).strftime('%Y-%m-%d %H:%M:%S')
+                          if alert == 'red' and _since else None)
+        hold_until_str = (datetime.fromtimestamp(_exp).strftime('%Y-%m-%d %H:%M:%S')
+                          if _lvl == 'red' and _exp else None)
+
         write_camera_status(cam, {
             'alert'     : alert,
             'timestamp' : ts_str,
+            'redSince'    : red_since_str,
+            'redHoldUntil': hold_until_str,
+            'reportInterval': note_report(cam, time.time()),
             'imageUrl'  : det_url,
             'rawUrl'    : raw_url,
             'history'   : [u for _, u in qd],
@@ -675,6 +779,7 @@ def detect_once(cam, url, driver: webdriver.Chrome):
         if alert_state[cam][0] != prev_alert:
             log_event('alert_change', cam, prev=prev_alert, curr=alert, yellowReason=yellow_reason, redReason=red_reason)
             log.info(f'{cam} alert {prev_alert} -> {alert} ({red_reason or yellow_reason})')
+            save_alert_state()   # 只在燈號改變時落地，一天約數百次而非每秒數十次
         else:
             log_event('frame', cam, alert=alert)
 
@@ -727,6 +832,8 @@ def worker_normal(cam_items: list):
 
 # ================== main ================== #
 if __name__ == '__main__':
+    load_alert_state()   # 讓 24 小時紅燈鎖定跨重啟存活
+
     with open(CCTV_JSON, encoding='utf-8') as f:
         cams = json.load(f)
 

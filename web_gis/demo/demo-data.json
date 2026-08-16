@@ -1,0 +1,101 @@
+{
+  "_readme": [
+    "Data for the public demo (console.html?demo=1). Everything here is invented.",
+    "Station names, districts and coordinates are fictional so that no real place",
+    "is ever shown on a public page as having a debris flow. Frames are synthetic.",
+    "Times are stored as offsets in seconds from page load, so the demo never",
+    "looks like a monitoring board that stopped updating months ago."
+  ],
+  "cameras": [
+    { "name": "示範溪上游觀測站", "county": "示範縣", "district": "範例鄉", "place": "示範縣範例鄉示範溪上游", "lon": 120.9421, "lat": 23.7318 },
+    { "name": "示範溪中游觀測站", "county": "示範縣", "district": "範例鄉", "place": "示範縣範例鄉示範溪中游", "lon": 120.9587, "lat": 23.7102 },
+    { "name": "示範溪下游觀測站", "county": "示範縣", "district": "範例鄉", "place": "示範縣範例鄉示範溪下游", "lon": 120.9744, "lat": 23.6903 },
+    { "name": "範例坑口全景式攝影機", "county": "示範縣", "district": "樣例鎮", "place": "示範縣樣例鎮範例坑出口", "lon": 121.0316, "lat": 23.8127 },
+    { "name": "範例坑野溪攝影機", "county": "示範縣", "district": "樣例鎮", "place": "示範縣樣例鎮範例坑野溪", "lon": 121.0472, "lat": 23.8241 },
+    { "name": "演示嶺北側攝影機", "county": "演示縣", "district": "測試鄉", "place": "演示縣測試鄉演示嶺北側坡面", "lon": 121.1608, "lat": 24.0455 },
+    { "name": "演示嶺南側攝影機", "county": "演示縣", "district": "測試鄉", "place": "演示縣測試鄉演示嶺南側坡面", "lon": 121.1533, "lat": 24.0281 },
+    { "name": "樣例谷匯流口攝影機", "county": "演示縣", "district": "測試鄉", "place": "演示縣測試鄉樣例谷匯流口", "lon": 121.2094, "lat": 23.9612 },
+    { "name": "樣例谷沉砂池攝影機", "county": "演示縣", "district": "測試鄉", "place": "演示縣測試鄉樣例谷沉砂池", "lon": 121.2211, "lat": 23.9487 },
+    { "name": "測試坪停車場攝影機", "county": "假想市", "district": "虛構區", "place": "假想市虛構區測試坪停車場", "lon": 120.8129, "lat": 24.2043 },
+    { "name": "測試坪邊坡攝影機", "county": "假想市", "district": "虛構區", "place": "假想市虛構區測試坪邊坡", "lon": 120.8247, "lat": 24.1958 },
+    { "name": "假想溪橋上游攝影機", "county": "假想市", "district": "虛構區", "place": "假想市虛構區假想溪橋上游", "lon": 120.7885, "lat": 24.2371 }
+  ],
+  "status": {
+    "示範溪中游觀測站": {
+      "alert": "red", "level": "red", "tsOffsetSec": -8, "reportInterval": 10.6,
+      "redSinceOffsetSec": -190, "redHoldUntilOffsetSec": 86210,
+      "redReason": "debris_flow",
+      "proportion": { "clear_water": 0.008, "muddy_water": 0.196, "debris_flow": 0.402, "large_rock": 0.094 },
+      "confidence": { "clear_water": 0.31, "muddy_water": 0.62, "debris_flow": 0.83, "large_rock": 0.61 }
+    },
+    "樣例谷匯流口攝影機": {
+      "alert": "red", "level": "red", "tsOffsetSec": -14, "reportInterval": 11.8,
+      "redSinceOffsetSec": -25200, "redHoldUntilOffsetSec": 61200,
+      "redReason": "large_rock_move",
+      "proportion": { "clear_water": 0.021, "muddy_water": 0.164, "debris_flow": 0.088, "large_rock": 0.152 },
+      "confidence": { "clear_water": 0.34, "muddy_water": 0.58, "debris_flow": 0.55, "large_rock": 0.74 }
+    },
+    "示範溪上游觀測站": {
+      "alert": "yellow", "level": "yellow", "tsOffsetSec": -11, "reportInterval": 10.9,
+      "yellowReason": "muddy_dominant",
+      "proportion": { "clear_water": 0.041, "muddy_water": 0.213, "debris_flow": 0.0, "large_rock": 0.011 },
+      "confidence": { "clear_water": 0.44, "muddy_water": 0.68, "debris_flow": 0.0, "large_rock": 0.55 }
+    },
+    "範例坑野溪攝影機": {
+      "alert": "yellow", "level": "yellow", "tsOffsetSec": -19, "reportInterval": 12.4,
+      "yellowReason": "muddy_vs_clear_overlap", "overlap_muddy_clear": true,
+      "proportion": { "clear_water": 0.096, "muddy_water": 0.108, "debris_flow": 0.0, "large_rock": 0.0 },
+      "confidence": { "clear_water": 0.51, "muddy_water": 0.57, "debris_flow": 0.0, "large_rock": 0.0 }
+    },
+    "演示嶺北側攝影機": {
+      "alert": "green", "level": "green", "tsOffsetSec": -420, "reportInterval": 11.2,
+      "failOffsetSec": -95, "failEvent": "download_fail",
+      "proportion": { "clear_water": 0.154, "muddy_water": 0.0, "debris_flow": 0.0, "large_rock": 0.0 },
+      "confidence": { "clear_water": 0.66, "muddy_water": 0.0, "debris_flow": 0.0, "large_rock": 0.0 }
+    },
+    "測試坪邊坡攝影機": {
+      "alert": "green", "level": "green", "tsOffsetSec": -1980, "reportInterval": 13.1,
+      "failOffsetSec": -60, "failEvent": "download_fail",
+      "proportion": { "clear_water": 0.0, "muddy_water": 0.0, "debris_flow": 0.0, "large_rock": 0.0 },
+      "confidence": { "clear_water": 0.0, "muddy_water": 0.0, "debris_flow": 0.0, "large_rock": 0.0 }
+    },
+    "示範溪下游觀測站": {
+      "alert": "green", "level": "green", "tsOffsetSec": -6, "reportInterval": 10.4,
+      "proportion": { "clear_water": 0.182, "muddy_water": 0.0, "debris_flow": 0.0, "large_rock": 0.0 },
+      "confidence": { "clear_water": 0.71, "muddy_water": 0.0, "debris_flow": 0.0, "large_rock": 0.0 }
+    },
+    "範例坑口全景式攝影機": {
+      "alert": "green", "level": "green", "tsOffsetSec": -17, "reportInterval": 12.0,
+      "proportion": { "clear_water": 0.121, "muddy_water": 0.004, "debris_flow": 0.0, "large_rock": 0.0 },
+      "confidence": { "clear_water": 0.63, "muddy_water": 0.29, "debris_flow": 0.0, "large_rock": 0.0 }
+    },
+    "演示嶺南側攝影機": {
+      "alert": "green", "level": "green", "tsOffsetSec": -9, "reportInterval": 11.5,
+      "proportion": { "clear_water": 0.098, "muddy_water": 0.0, "debris_flow": 0.0, "large_rock": 0.0 },
+      "confidence": { "clear_water": 0.59, "muddy_water": 0.0, "debris_flow": 0.0, "large_rock": 0.0 }
+    },
+    "樣例谷沉砂池攝影機": {
+      "alert": "green", "level": "green", "tsOffsetSec": -22, "reportInterval": 11.9,
+      "proportion": { "clear_water": 0.204, "muddy_water": 0.012, "debris_flow": 0.0, "large_rock": 0.0 },
+      "confidence": { "clear_water": 0.74, "muddy_water": 0.33, "debris_flow": 0.0, "large_rock": 0.0 }
+    },
+    "測試坪停車場攝影機": {
+      "alert": "green", "level": "green", "tsOffsetSec": -13, "reportInterval": 12.7,
+      "proportion": { "clear_water": 0.0, "muddy_water": 0.0, "debris_flow": 0.0, "large_rock": 0.0 },
+      "confidence": { "clear_water": 0.0, "muddy_water": 0.0, "debris_flow": 0.0, "large_rock": 0.0 }
+    },
+    "假想溪橋上游攝影機": {
+      "alert": "green", "level": "green", "tsOffsetSec": -16, "reportInterval": 10.8,
+      "proportion": { "clear_water": 0.167, "muddy_water": 0.0, "debris_flow": 0.0, "large_rock": 0.0 },
+      "confidence": { "clear_water": 0.69, "muddy_water": 0.0, "debris_flow": 0.0, "large_rock": 0.0 }
+    }
+  },
+  "events": [
+    { "offsetSec": -190, "camera": "示範溪中游觀測站", "prev": "yellow", "curr": "red", "redReason": "debris_flow" },
+    { "offsetSec": -640, "camera": "示範溪中游觀測站", "prev": "green", "curr": "yellow", "yellowReason": "muddy_dominant" },
+    { "offsetSec": -1120, "camera": "示範溪上游觀測站", "prev": "green", "curr": "yellow", "yellowReason": "muddy_dominant" },
+    { "offsetSec": -3300, "camera": "範例坑野溪攝影機", "prev": "green", "curr": "yellow", "yellowReason": "muddy_vs_clear_overlap" },
+    { "offsetSec": -25200, "camera": "樣例谷匯流口攝影機", "prev": "yellow", "curr": "red", "redReason": "large_rock_move" },
+    { "offsetSec": -26100, "camera": "樣例谷匯流口攝影機", "prev": "green", "curr": "yellow", "yellowReason": "muddy_dominant" }
+  ]
+}

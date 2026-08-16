@@ -3,14 +3,16 @@ Debris Flow Monitoring API Server
 Production-ready version with enhanced error handling and features
 """
 import os
+import csv
 import json
 import time
 import shutil
 import logging
+import threading
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional
-from fastapi import FastAPI, HTTPException, Header, UploadFile, File, Form, Request
+from fastapi import FastAPI, HTTPException, Header, UploadFile, File, Form, Request, Body
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,6 +30,21 @@ BASE_DIR = Path(__file__).parent
 CAMERA_STATUS_FILE = BASE_DIR / "camera_status.json"
 SAVED_IMAGES_DIR = BASE_DIR / "saved_images"
 WEB_GIS_DIR = BASE_DIR / "web_gis"
+LOGS_DIR = BASE_DIR / "logs"
+METRICS_DIR = LOGS_DIR / "metrics"
+EVENTS_FILE = LOGS_DIR / "events.jsonl"
+ACKS_FILE = LOGS_DIR / "acks.jsonl"
+
+# Acknowledgement reason codes. The console renders the labels; the server only
+# checks that the code is one it knows, so a malformed client cannot write
+# arbitrary text into what is now a record of who did what about an alert.
+REASON_CODES = {
+    "fp_noise", "fp_lens", "unclear",
+    "verified_none", "verified_debris",
+    "reported", "dispatched", "other",
+}
+ACK_ACTIONS = {"ack", "unack", "clear_red"}
+acks_lock = threading.Lock()
 
 # Stats tracking
 stats = {
@@ -167,6 +184,276 @@ def get_cctv_json():
     """Direct path for cctv.json (frontend compatibility)"""
     return get_cctv()
 
+# ===== HISTORY ROUTES =====
+
+def _metrics_path(camera: str) -> Path:
+    """
+    Resolve a camera name to its metrics CSV, refusing anything that escapes
+    the metrics directory. The name arrives from the URL, so '../../secrets.env'
+    is the obvious attempt; resolving and then re-checking containment catches
+    both that and symlink tricks.
+    """
+    if not camera or len(camera) > 120:
+        raise HTTPException(status_code=400, detail="Invalid camera name")
+    safe = camera.replace("/", "").replace("\\", "").replace("\x00", "")
+    path = (METRICS_DIR / f"{safe}.csv").resolve()
+    try:
+        path.relative_to(METRICS_DIR.resolve())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid camera name")
+    return path
+
+
+@app.get("/api/metrics/{camera}")
+def get_metrics(camera: str, hours: float = 24.0, max_points: int = 720):
+    """
+    Per-camera detection history, read from the CSV the detector already writes.
+
+    Without this the dashboard can only chart what it observed since the page
+    was opened, which resets on every refresh. All 63 files together are ~4 MB,
+    so this stays cheap.
+    """
+    path = _metrics_path(camera)
+    if not path.exists():
+        return {"camera": camera, "points": [], "truncated": False}
+
+    cutoff = datetime.now() - timedelta(hours=max(0.1, min(hours, 24 * 14)))
+    rows = []
+    try:
+        with open(path, "r", encoding="utf-8", newline="") as f:
+            for row in csv.DictReader(f):
+                ts = row.get("timestamp")
+                if not ts:
+                    continue
+                try:
+                    t = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    continue          # one unparseable row must not kill the series
+                if t < cutoff:
+                    continue
+                rows.append((t, row))
+    except OSError as e:
+        logger.error(f"metrics read failed for {camera}: {e}")
+        raise HTTPException(status_code=500, detail="Cannot read metrics")
+
+    # Downsample, but never drop a row where the alert level changed — those are
+    # the only rows an operator actually looks for in a long series.
+    truncated = False
+    if max_points > 0 and len(rows) > max_points:
+        truncated = True
+        step = len(rows) / max_points
+        keep, prev_alert, nxt = [], None, 0.0
+        for i, (t, row) in enumerate(rows):
+            alert = row.get("alert")
+            if alert != prev_alert or i >= nxt or i == len(rows) - 1:
+                keep.append((t, row))
+                nxt = i + step
+            prev_alert = alert
+        rows = keep
+
+    def num(v):
+        try:
+            return round(float(v), 4)
+        except (TypeError, ValueError):
+            return 0.0
+
+    points = [{
+        "t": t.strftime("%Y-%m-%d %H:%M:%S"),
+        "alert": row.get("alert") or "green",
+        "prop": {k: num(row.get(f"{k}_prop")) for k in
+                 ("clear_water", "muddy_water", "debris_flow", "large_rock")},
+        "conf": {k: num(row.get(f"{k}_conf")) for k in
+                 ("clear_water", "muddy_water", "debris_flow", "large_rock")},
+    } for t, row in rows]
+
+    return {"camera": camera, "points": points, "truncated": truncated}
+
+
+# Event types the current detector actually emits. camera_circuit_open,
+# cooldown_skip and download_invalid appear in older log data but the present
+# version never writes them, so they are not treated as live signals.
+_ALERT_EVENTS = {"alert_change"}
+_FAILURE_EVENTS = {"download_fail", "decode_fail", "no_image", "no_image_element", "exception"}
+
+
+@app.get("/api/events")
+def get_events(limit: int = 200, tail_bytes: int = 2_000_000):
+    """
+    Alert transitions, plus the most recent fetch failure per camera.
+
+    events.jsonl is append-only and already ~9.5 MB, dominated by per-frame
+    records, so only the tail is read. Failures are collapsed to one per camera:
+    the dashboard wants to know 'is this camera's feed broken right now', not to
+    receive two thousand individual failures.
+    """
+    result = {"events": [], "failures": {}, "available": EVENTS_FILE.exists()}
+    if not EVENTS_FILE.exists():
+        return result
+
+    try:
+        size = EVENTS_FILE.stat().st_size
+        with open(EVENTS_FILE, "rb") as f:
+            start = max(0, size - max(1024, tail_bytes))
+            f.seek(start)
+            blob = f.read()
+    except OSError as e:
+        logger.error(f"events read failed: {e}")
+        return result
+
+    lines = blob.decode("utf-8", errors="replace").split("\n")
+    if start > 0 and lines:
+        lines = lines[1:]         # first line is probably cut in half
+
+    alerts = []
+    failures = {}
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue              # the file already contains a few damaged lines
+        if not isinstance(rec, dict):
+            continue
+        ev, cam, ts = rec.get("event"), rec.get("camera"), rec.get("ts")
+        if not ev or not ts:
+            continue
+        if ev in _ALERT_EVENTS:
+            alerts.append({
+                "ts": ts, "camera": cam,
+                "prev": rec.get("prev"), "curr": rec.get("curr"),
+                "yellowReason": rec.get("yellowReason") or "",
+                "redReason": rec.get("redReason") or "",
+            })
+        elif ev in _FAILURE_EVENTS and cam:
+            failures[cam] = {"ts": ts, "event": ev}
+
+    alerts.reverse()              # newest first
+    result["events"] = alerts[:max(1, min(limit, 1000))]
+    result["failures"] = failures
+    result["truncated"] = start > 0
+    return result
+
+
+# ===== ACKNOWLEDGEMENT ROUTES =====
+
+def _read_acks() -> dict:
+    """
+    Replay acks.jsonl into the current state per camera.
+
+    The file is append-only: an un-acknowledge is a new record, not a deletion,
+    because this doubles as the record of who handled which alert and why.
+    """
+    state = {}
+    if not ACKS_FILE.exists():
+        return state
+    try:
+        with open(ACKS_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except (json.JSONDecodeError, ValueError):
+                    continue
+                cam = rec.get("camera")
+                if not cam:
+                    continue
+                if rec.get("action") == "unack":
+                    state.pop(cam, None)
+                else:
+                    state[cam] = rec
+    except OSError as e:
+        logger.error(f"acks read failed: {e}")
+    return state
+
+
+@app.get("/api/acks")
+def get_acks():
+    """Current acknowledgement per camera."""
+    return {"acks": _read_acks()}
+
+
+@app.post("/api/acks")
+def post_ack(payload: dict = Body(...)):
+    """
+    Record an acknowledgement, an un-acknowledge, or an early release of a held
+    red alert.
+
+    Note what this does NOT do: it never clears the detector's 24-hour red hold.
+    The detector reads its state file only at startup, so writing there would
+    take effect at some unpredictable future restart, and a web click that
+    silently disarms a safety mechanism is the wrong shape anyway. 'clear_red'
+    records an operator decision that the console honours in its presentation;
+    the detector keeps holding.
+    """
+    def field(name, maxlen, required=True):
+        v = payload.get(name)
+        v = "" if v is None else str(v).strip()
+        if required and not v:
+            raise HTTPException(status_code=400, detail=f"{name} is required")
+        return v[:maxlen]
+
+    action = field("action", 20)
+    if action not in ACK_ACTIONS:
+        raise HTTPException(status_code=400, detail="Unknown action")
+
+    camera = field("camera", 120)
+    by = field("by", 60)
+
+    reason = field("reason", 40, required=(action != "unack"))
+    if action != "unack":
+        if reason not in REASON_CODES:
+            raise HTTPException(status_code=400, detail="Unknown reason code")
+        reason_text = field("reasonText", 500, required=(reason == "other"))
+    else:
+        reason, reason_text = "", ""
+
+    images = payload.get("images") or {}
+    if not isinstance(images, dict):
+        images = {}
+
+    record = {
+        "ts": datetime.utcnow().isoformat() + "Z",
+        "camera": camera,
+        "action": action,
+        "alert": field("alert", 20, required=False),
+        "alertTs": field("alertTs", 40, required=False),
+        # Scopes the record to one specific alert episode. For red this is
+        # redSince, so a NEW debris flow at the same camera is never silenced by
+        # an acknowledgement of the previous one.
+        "eventKey": field("eventKey", 40, required=False),
+        "by": by,
+        # 'self' means the name was typed by the user and is not verified. If an
+        # authenticating proxy is ever put in front of this, that becomes
+        # 'access' and the record format does not have to change.
+        "bySource": "self",
+        "reason": reason,
+        "reasonText": reason_text,
+        # Kept for reason codes in the false-positive family: these frames are
+        # labelled training data for whoever next tunes the model.
+        "images": {
+            "annotated": str(images.get("annotated") or "")[:500],
+            "raw": str(images.get("raw") or "")[:500],
+        },
+        "notified": None,   # reserved for LINE push
+    }
+
+    try:
+        with acks_lock:
+            ACKS_FILE.parent.mkdir(parents=True, exist_ok=True)
+            with open(ACKS_FILE, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except OSError as e:
+        logger.error(f"ack write failed: {e}")
+        raise HTTPException(status_code=500, detail="Cannot record acknowledgement")
+
+    logger.info(f"ack {action} {camera} by {by} ({reason})")
+    return {"success": True, "record": record}
+
+
 # ===== SYNC ROUTES =====
 
 @app.post("/api/sync/status")
@@ -265,10 +552,10 @@ def cleanup_old_images(
 
 @app.get("/")
 def root():
-    """Serve the main web interface"""
-    index_file = WEB_GIS_DIR / "index.html"
-    if index_file.exists():
-        return FileResponse(index_file, media_type="text/html")
+    """Serve the operations console."""
+    console = WEB_GIS_DIR / "console.html"
+    if console.exists():
+        return FileResponse(console, media_type="text/html")
     return {"message": "Debris Flow Monitoring API", "docs": "/docs"}
 
 # ===== STATIC FILES (must be last) =====
