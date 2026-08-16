@@ -23,6 +23,9 @@ cctv_full.json
 camera_status.json
 camera_status.json.tmp
 camera_status.json.bak
+# Runtime alert state (holds the 24h red locks across detector restarts)
+alert_state.json
+alert_state.json.tmp
 .env
 secrets.env
 

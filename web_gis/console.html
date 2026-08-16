@@ -117,6 +117,14 @@
       overflow: hidden;
     }
 
+    /* The page is one vertical stack: optional demo banner, header, the view,
+       and on narrow screens the tab bar. Letting flexbox divide the height
+       means no element has to know how tall any other one is — an earlier
+       version measured the banner in JS and got it wrong the moment the text
+       wrapped to a second line. */
+    body { display: flex; flex-direction: column; }
+    body > .app, body > .wall-shell { flex: 1 1 auto; min-height: 0; }
+
     button, input, select { font: inherit; color: inherit; }
     button { cursor: pointer; }
     ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -131,6 +139,9 @@
        ============================================================ */
     header.topbar {
       height: var(--header-h);
+      /* Fixed chrome: without this it is a shrinkable flex item and gets
+         squashed whenever the content below wants more room. */
+      flex: 0 0 var(--header-h);
       display: flex;
       align-items: center;
       gap: 1rem;
@@ -163,6 +174,7 @@
     .kpi .k-icon { font-size: .9rem; line-height: 1; }
     .kpi .k-num { font-size: 1.5rem; font-weight: 800; line-height: 1; font-family: var(--mono); }
     .kpi .k-lab { font-size: .7rem; color: var(--fg-2); line-height: 1.2; }
+    .kpi .k-sub { font-size: .64rem; font-weight: 700; opacity: .85; }
     .kpi.red { color: var(--red); } .kpi.red .k-num { color: var(--red); }
     .kpi.yellow { color: var(--yellow); } .kpi.yellow .k-num { color: var(--yellow); }
     .kpi.gray { color: var(--gray); } .kpi.gray .k-num { color: var(--gray); }
@@ -235,7 +247,6 @@
     .app {
       display: grid;
       grid-template-columns: var(--col-queue) minmax(0, 1fr) var(--col-detail);
-      height: calc(100% - var(--header-h));
     }
     .app[data-mode="map"] { --col-queue: 0rem; --col-detail: 0rem; }
     .app[data-mode="map"] .panel-queue,
@@ -484,7 +495,7 @@
     /* ============================================================
        Wall view
        ============================================================ */
-    .wall-shell { height: calc(100% - var(--header-h)); display: flex; flex-direction: column; background: var(--bg-0); }
+    .wall-shell { display: flex; flex-direction: column; background: var(--bg-0); }
     .wall-bar { display: flex; align-items: center; gap: .5rem; padding: .55rem .8rem; border-bottom: 1px solid var(--line); background: var(--bg-1); }
     .wall-grid {
       flex: 1; overflow-y: auto; padding: .7rem;
@@ -530,13 +541,157 @@
       border-radius: 999px; font-size: .82rem; font-weight: 700; box-shadow: var(--shadow);
     }
 
-    /* Narrow screens: this board targets a wall, but a laptop should
-       still be usable — drop to map + queue and float the detail. */
-    @media (max-width: 1400px) { :root { --col-detail: 23rem; --col-queue: 20rem; } }
+    /* ============================================================
+       Acknowledgement sheet
+       Bottom sheet on narrow screens, centred dialog on wide ones.
+       ============================================================ */
+    .sheet-back {
+      position: fixed; inset: 0; z-index: 120;
+      background: rgba(0, 0, 0, .55);
+      display: flex; align-items: flex-end; justify-content: center;
+    }
+    .sheet {
+      width: min(30rem, 100%); max-height: 88vh; overflow-y: auto;
+      background: var(--bg-1); border: 1px solid var(--line-strong);
+      border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+      padding: 1rem; box-shadow: var(--shadow);
+      animation: sheetUp .2s ease-out;
+    }
+    @keyframes sheetUp { from { transform: translateY(100%); } to { transform: none; } }
+    @media (min-width: 700px) {
+      .sheet-back { align-items: center; }
+      .sheet { border-radius: var(--radius-lg); animation: none; }
+    }
+    .sheet-head { display: flex; align-items: center; gap: .5rem; margin-bottom: .5rem; }
+    .sheet-head h3 { margin: 0; font-size: 1rem; flex: 1; }
+    .sheet-cam { font-size: .84rem; color: var(--fg-1); margin-bottom: .6rem; }
+    .sheet-cam .lv { font-weight: 700; }
+    .sheet-note {
+      font-size: .74rem; color: var(--fg-2); background: var(--bg-2);
+      border-left: 3px solid var(--yellow); border-radius: 6px;
+      padding: .5rem .6rem; margin-bottom: .7rem; line-height: 1.5;
+    }
+    .sheet-label { font-size: .72rem; color: var(--fg-3); text-transform: uppercase; letter-spacing: .06em; margin: .7rem 0 .35rem; display: block; }
+    .reasons { display: flex; flex-direction: column; gap: .3rem; }
+    .reason {
+      display: flex; align-items: center; gap: .55rem;
+      padding: .55rem .6rem; border-radius: var(--radius);
+      background: var(--bg-2); border: 1px solid var(--line);
+      font-size: .82rem; text-align: left; color: var(--fg-1); width: 100%;
+    }
+    .reason:hover { background: var(--bg-hover); }
+    .reason.sel { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
+    .reason .rd { width: .85rem; height: .85rem; border-radius: 50%; border: 2px solid var(--fg-3); flex: 0 0 auto; }
+    .reason.sel .rd { border-color: var(--accent); background: var(--accent); box-shadow: inset 0 0 0 2px var(--bg-1); }
+    #ack-text { width: 100%; margin-top: .4rem; resize: vertical; font-family: inherit; }
+    .sheet-err { margin-top: .6rem; font-size: .78rem; color: var(--red); }
+    .sheet-actions { display: flex; gap: .5rem; margin-top: 1rem; }
+    .sheet-actions .act { flex: 1; }
+
+    /* ============================================================
+       Demo banner
+       Permanent and not dismissible. A page that looks like live monitoring
+       and names a river as having a debris flow can be screenshotted and
+       forwarded; the label has to travel with it.
+       ============================================================ */
+    .demo-banner {
+      flex: 0 0 auto; z-index: 200;
+      display: flex; align-items: center; justify-content: center;
+      gap: .6rem; flex-wrap: wrap;
+      padding: .4rem .8rem; text-align: center;
+      background: repeating-linear-gradient(45deg, #b45309, #b45309 12px, #92400e 12px, #92400e 24px);
+      color: #fff; font-size: .76rem; line-height: 1.35;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, .4);
+    }
+    .demo-banner strong { font-size: .84rem; letter-spacing: .04em; }
+    .demo-banner span { opacity: .92; }
     @media (max-width: 1100px) {
-      .app { grid-template-columns: 1fr; grid-template-rows: 1fr; }
-      .panel-queue { position: absolute; left: 0; top: var(--header-h); bottom: 0; width: 20rem; z-index: 30; box-shadow: var(--shadow); }
-      .panel-detail { position: absolute; right: 0; top: var(--header-h); bottom: 0; width: 22rem; z-index: 30; box-shadow: var(--shadow); }
+      .demo-banner { font-size: .68rem; padding: .35rem .5rem; }
+      .demo-banner strong { font-size: .74rem; }
+    }
+
+    /* ============================================================
+       Bottom tab bar — the mobile navigation
+       ============================================================ */
+    .mtabs { display: none; }
+    .mtab {
+      flex: 1; display: flex; flex-direction: column; align-items: center; gap: .1rem;
+      padding: .45rem .2rem; border: 0; background: transparent; color: var(--fg-3);
+      font-size: .68rem; font-weight: 600; position: relative; min-height: 3.2rem;
+    }
+    .mtab .mt-ico { font-size: 1.15rem; line-height: 1.1; }
+    .mtab.active { color: var(--accent); }
+    .mtab .mt-badge {
+      position: absolute; top: .18rem; right: 50%; margin-right: -1.5rem;
+      min-width: 1.15rem; padding: 0 .25rem; border-radius: 999px;
+      background: var(--red); color: #fff; font-size: .62rem; line-height: 1.2rem;
+      font-family: var(--mono); font-weight: 800;
+    }
+    .mtab .mt-badge.zero { display: none; }
+
+    /* ============================================================
+       Responsive
+       Above 1100px this is a three-column board. Below it, the same page
+       becomes one column with bottom tabs — the users reach it from phones
+       as often as from a desk, so the narrow layout is a first-class
+       arrangement of the same data, not a degraded fallback.
+       ============================================================ */
+    @media (max-width: 1400px) { :root { --col-detail: 23rem; --col-queue: 20rem; } }
+
+    @media (max-width: 1100px) {
+      :root { --header-h: 3.4rem; --feed-h: 11rem; }
+
+      /* One column; the bottom tabs decide which panel occupies it. */
+      .app { grid-template-columns: 1fr; }
+      .app > .panel, .app > .center { display: none; }
+      .app[data-mtab="queue"] > .panel-queue,
+      .app[data-mtab="map"] > .center,
+      .app[data-mtab="detail"] > .panel-detail { display: flex; }
+      /* Fallback: if data-mtab was never set — a resize the media-query
+         listener missed, or scripting that failed after layout — the alert
+         list still shows. A blank screen is the one outcome a board like
+         this must never produce. */
+      .app:not([data-mtab]) > .panel-queue { display: flex; }
+      .panel-queue, .panel-detail { border: 0; }
+      .resizer { display: none; }
+
+      .mtabs {
+        display: flex; flex: 0 0 auto; z-index: 80;
+        background: var(--bg-1); border-top: 1px solid var(--line);
+        padding-bottom: env(safe-area-inset-bottom);
+      }
+
+      /* The header keeps only what is readable at this width: the counts. */
+      .brand-txt, .clock, .tabs, #btn-full { display: none; }
+      .brand { margin-right: .2rem; }
+      .brand-mark { width: 1.9rem; height: 1.9rem; font-size: 1rem; }
+      .kpis { overflow-x: auto; scrollbar-width: none; }
+      .kpis::-webkit-scrollbar { display: none; }
+      .kpi { padding: .25rem .55rem .25rem .45rem; gap: .35rem; }
+      .kpi .k-num { font-size: 1.15rem; }
+      .kpi .k-lab { font-size: .6rem; }
+      .conn { padding: .25rem .5rem; font-size: .66rem; }
+      .conn span:not(.dot) { display: none; }
+
+      /* Touch targets and legibility. */
+      .q-row { grid-template-columns: 3px 5.2rem minmax(0, 1fr) auto; padding: .6rem .5rem .6rem .35rem; }
+      .q-thumb { width: 5.2rem; height: 3.3rem; }
+      .q-name { font-size: .92rem; }
+      .act, .mini-btn, .search { min-height: 2.8rem; }
+      .reason { min-height: 2.9rem; }
+      .sec-head { padding: .6rem .55rem; }
+      .feed { --feed-h: 9rem; }
+      .map-legend { display: none; }
+      .toasts { width: auto; left: .6rem; right: .6rem; top: calc(var(--header-h) + .4rem); }
+      .banner { left: .6rem; right: .6rem; transform: none; text-align: center; font-size: .74rem; }
+      .popover { left: .6rem; right: .6rem; width: auto; max-height: 76vh; overflow-y: auto; }
+      .d-actions .act { flex: 1 1 45%; }
+    }
+
+    @media (max-width: 1100px) and (orientation: landscape) {
+      /* A phone held sideways has almost no vertical room to spare. */
+      :root { --header-h: 3rem; }
+      .feed { display: none; }
     }
   </style>
 </head>
@@ -556,7 +711,7 @@
       <button class="kpi red" data-filter="red" aria-pressed="false">
         <span class="k-icon">▲</span>
         <span><span class="k-num" id="kpi-red">0</span></span>
-        <span class="k-lab">紅燈<br>警報</span>
+        <span class="k-lab">紅燈警報<br><span id="kpi-red-sub" class="k-sub hidden"></span></span>
       </button>
       <button class="kpi yellow" data-filter="yellow" aria-pressed="false">
         <span class="k-icon">◆</span>
@@ -619,14 +774,14 @@
     </div>
 
     <div class="pop-divider"></div>
-    <h3>警戒判定</h3>
+    <h3>測站健康判定</h3>
     <div class="set-row">
-      <label>資料停更門檻<span class="hint">超過即標示為「停更」</span></label>
-      <div><input class="num-in" type="number" id="in-stale" min="1" step="1"> <span style="font-size:.72rem;color:var(--fg-3)">分</span></div>
+      <label>回報變慢門檻<span class="hint">該站自身回報間隔的倍數</span></label>
+      <div><input class="num-in" type="number" id="in-stale" min="2" step="1"> <span style="font-size:.72rem;color:var(--fg-3)">倍</span></div>
     </div>
     <div class="set-row">
-      <label>離線門檻<span class="hint">超過即視為相機離線</span></label>
-      <div><input class="num-in" type="number" id="in-offline" min="2" step="1"> <span style="font-size:.72rem;color:var(--fg-3)">分</span></div>
+      <label>無回報門檻<span class="hint">同上，超過即視為停止回報</span></label>
+      <div><input class="num-in" type="number" id="in-offline" min="3" step="1"> <span style="font-size:.72rem;color:var(--fg-3)">倍</span></div>
     </div>
     <div class="set-row">
       <label>更新頻率</label>
@@ -646,7 +801,6 @@
 
     <div class="pop-divider"></div>
     <button class="link-btn" id="btn-export">⬇ 匯出目前狀態 CSV</button><br>
-    <button class="link-btn" id="btn-ackall">✓ 確認全部警報</button><br>
     <button class="link-btn" id="btn-reset">↺ 重設所有設定</button>
   </div>
 
@@ -727,7 +881,44 @@
     <div class="wall-grid" id="wall"></div>
   </div>
 
+  <!-- Mobile navigation. Lands on 警報 because the first question someone
+       opens this on a phone to answer is "is anything wrong right now", not
+       "where are the cameras". -->
+  <nav class="mtabs" id="mtabs">
+    <button class="mtab active" data-mtab="queue">
+      <span class="mt-ico">⚠</span><span>警報</span><span class="mt-badge zero" id="mt-badge">0</span>
+    </button>
+    <button class="mtab" data-mtab="map"><span class="mt-ico">🗺</span><span>地圖</span></button>
+    <button class="mtab" data-mtab="detail"><span class="mt-ico">📋</span><span>詳情</span></button>
+  </nav>
+
   <div class="toasts" id="toasts"></div>
+
+  <!-- Acknowledgement sheet. Deliberately a deliberate action: it writes a
+       named, reasoned record that outlives the session. -->
+  <div class="sheet-back hidden" id="ack-back">
+    <div class="sheet" id="ack-sheet" role="dialog" aria-modal="true" aria-labelledby="ack-title">
+      <div class="sheet-head">
+        <h3 id="ack-title">確認警報</h3>
+        <button class="icon-btn" id="ack-x" aria-label="關閉">✕</button>
+      </div>
+      <div class="sheet-cam" id="ack-cam"></div>
+      <div class="sheet-note hidden" id="ack-note"></div>
+
+      <label class="sheet-label" for="ack-by">處理人員</label>
+      <input class="search" id="ack-by" type="text" placeholder="你的名字" maxlength="60" autocomplete="name">
+
+      <div class="sheet-label">處置原因（必選）</div>
+      <div class="reasons" id="ack-reasons"></div>
+      <textarea class="search hidden" id="ack-text" rows="2" maxlength="500" placeholder="請說明…"></textarea>
+
+      <div class="sheet-err hidden" id="ack-err"></div>
+      <div class="sheet-actions">
+        <button class="act" id="ack-cancel">取消</button>
+        <button class="act primary" id="ack-ok">送出</button>
+      </div>
+    </div>
+  </div>
 
   <script>
     'use strict';
@@ -743,7 +934,33 @@
     };
     const ALERT_TW = { red: '紅燈警報', yellow: '黃燈警示', green: '綠燈正常', unknown: '無資料' };
     const ALERT_ICON = { red: '▲', yellow: '◆', green: '●', unknown: '?' };
-    const LINK_TW = { live: '連線中', stale: '資料停更', offline: '離線', nodata: '無回報' };
+    const LINK_TW = { live: '連線中', slow: '回報變慢', nodata: '無回報', fail: '影像抓取失敗' };
+
+    // Acknowledgement reasons. Codes must match REASON_CODES in server.py.
+    // The fp_* family marks a detection the operator judged wrong; those records
+    // keep the frame paths, which makes them labelled training data later.
+    const REASONS = [
+      { code: 'fp_noise', label: '誤判｜畫面雜訊、光影變化', fp: true },
+      { code: 'fp_lens', label: '誤判｜鏡頭髒污、遮蔽、雨滴附著', fp: true },
+      { code: 'unclear', label: '無法判斷｜夜間、濃霧、強降雨' },
+      { code: 'verified_none', label: '已現場查證｜無土石流' },
+      { code: 'verified_debris', label: '已現場查證｜確有土石流' },
+      { code: 'reported', label: '已通報權責單位' },
+      { code: 'dispatched', label: '已派員前往查看' },
+      { code: 'other', label: '其他（請說明）', needsText: true }
+    ];
+    const REASON_TW = Object.fromEntries(REASONS.map(r => [r.code, r.label]));
+
+    // A red alert is held for 24h by the detector. Within this window of its
+    // redSince it is treated as happening now; after it, as a latched state.
+    const LIVE_RED_MIN = 10;
+    // Multiples of each camera's own median report interval. Fixed seconds go
+    // stale the moment --threads or --interval changes.
+    const SLOW_MULT = 6, DEAD_MULT = 20;
+    const FALLBACK_SLOW_SEC = 90, FALLBACK_DEAD_SEC = 300;
+    // Above this share of cameras silent, the detector itself is presumed down
+    // and the board says so once instead of raising 63 separate faults.
+    const SYSTEM_DOWN_RATIO = 0.9;
 
     const BASEMAPS = {
       dark: { url: 'https://{a-c}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', attr: '© OpenStreetMap © CARTO' },
@@ -753,7 +970,7 @@
 
     const DEFAULTS = {
       zoom: 'md', theme: 'dark', base: 'dark',
-      staleMin: 5, offlineMin: 15, pollSec: 5,
+      slowMult: SLOW_MULT, deadMult: DEAD_MULT, pollSec: 5,
       sound: false, notify: false, raw: false,
       abnormalOnly: true, tile: 15, labels: true
     };
@@ -772,9 +989,12 @@
       selected: null,
       prevAlert: new Map(),     // name -> last alert level, for transition detection
       prevLink: new Map(),
-      events: [],               // derived event feed
-      acks: new Map(Object.entries(readLS(LS + '.acks', {}))),
-      series: new Map(),        // name -> [{t, prop, conf, alert}] accumulated this session
+      events: [],               // event feed (server history + live transitions)
+      acks: new Map(),          // name -> ack record from the server
+      failures: {},             // name -> {ts, event} latest fetch failure
+      systemDown: false,        // detector presumed not running
+      operator: readLS(LS + '.operator', ''),
+      series: new Map(),        // name -> [{t, prop, conf, alert}] from /api/metrics
       kpiFilter: null,
       lastGood: null,           // timestamp of last successful poll
       failures: 0,
@@ -782,7 +1002,6 @@
       chartVis: Object.fromEntries(LABELS.map(l => [l, true])),
       showLabels: cfg.labels
     };
-    const MAX_SERIES = 720;     // ~1h at 5s polling
     const MAX_EVENTS = 200;
 
     let map, camLayer, camSource, baseLayer, pulses = new Map();
@@ -796,7 +1015,6 @@
     }
     function writeLS(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { } }
     function saveCfg() { writeLS(LS, cfg); }
-    function saveAcks() { writeLS(LS + '.acks', Object.fromEntries(S.acks)); }
     function $(sel, root) { return (root || document).querySelector(sel); }
     function el(tag, cls, txt) {
       const n = document.createElement(tag);
@@ -836,6 +1054,102 @@
     }
 
     /* ==========================================================
+       3b. Demo mode
+       Serves the public showcase from static files, so the page works on
+       GitHub Pages with no backend at all. Everything it shows is invented:
+       fictional stations, fictional districts, synthetic frames. Real places
+       are never depicted as having a debris flow on a page anyone can reach.
+       ========================================================== */
+    const DEMO = new URLSearchParams(location.search).get('demo') === '1';
+    let demoData = null;
+
+    function demoImg(level, raw) {
+      return `../saved_images/demo/demo_${level}${raw ? '_raw' : ''}.jpg`;
+    }
+
+    // Offsets, not absolute times: a frozen snapshot would read as a board that
+    // stopped updating months ago, which is its own kind of misleading.
+    function demoStamp(offsetSec) {
+      const d = new Date(Date.now() + offsetSec * 1000);
+      const p = n => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+    }
+
+    function buildDemoStatus() {
+      const status = {}, failures = {};
+      for (const [name, s] of Object.entries(demoData.status)) {
+        const lvl = s.level || 'green';
+        // Three frames so the viewer's timeline has something to scrub.
+        // The fragment carries the capture time and level in the same shape the
+        // real filenames use, so the viewer's timeline parses it unchanged.
+        const hist = [-24, -12, 0].map(off => {
+          const t = demoStamp((s.tsOffsetSec || 0) + off).replace(/[-: ]/g, '');
+          return `${demoImg(lvl)}#_${t.slice(0, 8)}_${t.slice(8, 14)}_${lvl}`;
+        });
+        status[name] = {
+          alert: s.alert,
+          timestamp: demoStamp(s.tsOffsetSec || 0),
+          reportInterval: s.reportInterval || 0,
+          redSince: s.redSinceOffsetSec != null ? demoStamp(s.redSinceOffsetSec) : null,
+          redHoldUntil: s.redHoldUntilOffsetSec != null ? demoStamp(s.redHoldUntilOffsetSec) : null,
+          imageUrl: hist[hist.length - 1],
+          rawUrl: demoImg(lvl, true),
+          history: hist,
+          historyRaw: hist.map(() => demoImg(lvl, true)),
+          proportion: s.proportion || {},
+          confidence: s.confidence || {},
+          overlap_muddy_clear: !!s.overlap_muddy_clear,
+          yellowReason: s.yellowReason || '',
+          redReason: s.redReason || ''
+        };
+        if (s.failOffsetSec != null) {
+          failures[name] = {
+            ts: new Date(Date.now() + s.failOffsetSec * 1000).toISOString(),
+            event: s.failEvent || 'download_fail'
+          };
+        }
+      }
+      return { status, failures };
+    }
+
+    // Deterministic per-camera history so the trend chart has a shape without
+    // shipping a metrics file for every demo station.
+    function demoSeries(name) {
+      const s = demoData.status[name];
+      if (!s) return [];
+      let seed = 0;
+      for (const ch of name) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
+      const rnd = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296);
+      const pts = [], n = 180, step = 30000;
+      const start = Date.now() - n * step;
+      for (let i = 0; i < n; i++) {
+        const near = i / n;                       // ramp toward the current state
+        const p = s.proportion || {};
+        pts.push({
+          t: start + i * step,
+          alert: near > 0.93 ? s.alert : (near > 0.75 && s.alert === 'red' ? 'yellow' : 'green'),
+          prop: {
+            clear_water: Math.max(0, (p.clear_water || 0.1) * (0.6 + rnd() * 0.7)),
+            muddy_water: (p.muddy_water || 0) * near * (0.5 + rnd()),
+            debris_flow: (p.debris_flow || 0) * Math.pow(near, 6) * (0.7 + rnd() * 0.6),
+            large_rock: (p.large_rock || 0) * Math.pow(near, 4) * (0.7 + rnd() * 0.6)
+          },
+          conf: s.confidence || {}
+        });
+      }
+      return pts;
+    }
+
+    function showDemoBanner() {
+      const b = el('div', 'demo-banner');
+      b.append(
+        el('strong', null, '展示資料 · 非即時監測'),
+        el('span', null, '本頁測站名稱、位置與影像皆為虛構，僅供介面展示，不代表任何真實地點的狀況。')
+      );
+      document.body.insertBefore(b, document.body.firstChild);
+    }
+
+    /* ==========================================================
        4. Data layer
        ========================================================== */
     async function fetchJSON(paths) {
@@ -851,6 +1165,14 @@
     }
 
     async function loadCameras() {
+      if (DEMO) {
+        demoData = await fetchJSON(['./demo/demo-data.json', 'demo/demo-data.json']);
+        demoData.cameras.forEach(c => S.byName.set(c.name, {
+          name: c.name, county: c.county, district: c.district,
+          place: c.place, src: '', lon: c.lon, lat: c.lat
+        }));
+        return;
+      }
       // Served at /web_gis/console.html with data at the root; the relative
       // fallback keeps the page usable behind a different mount point.
       S.cams = await fetchJSON(['/cctv.json', '../cctv.json', 'cctv.json']);
@@ -869,16 +1191,68 @@
     }
 
     async function poll() {
+      if (DEMO) {
+        // No backend at all: recompute from offsets so the board keeps reading
+        // as live, and never touch /api/*.
+        const d = buildDemoStatus();
+        S.status = d.status;
+        S.failures = d.failures;
+        S.pollFails = 0;
+        S.lastGood = new Date();
+        if (!serverEventsLoaded) {
+          mergeServerEvents(demoData.events.map(e => ({
+            ts: new Date(Date.now() + e.offsetSec * 1000).toISOString(),
+            camera: e.camera, prev: e.prev, curr: e.curr,
+            yellowReason: e.yellowReason, redReason: e.redReason
+          })));
+        }
+        derive();
+        renderAll();
+        return;
+      }
       try {
         S.status = await fetchJSON(['/camera_status.json', '/api/status', '../camera_status.json']);
-        S.failures = 0;
+        S.pollFails = 0;
         S.lastGood = new Date();
       } catch (e) {
-        S.failures++;
+        S.pollFails = (S.pollFails || 0) + 1;
         console.warn('poll failed', e);
       }
+
+      // Failure events and acknowledgements come from the server, so every
+      // viewer sees the same handled/unhandled picture. Neither is fatal: the
+      // board still works from camera_status.json alone if they fail.
+      try {
+        const ev = await fetchJSON(['/api/events?limit=200']);
+        S.failures = ev.failures || {};
+        mergeServerEvents(ev.events || []);
+      } catch (e) { /* history unavailable; live transitions still work */ }
+
+      try {
+        const a = await fetchJSON(['/api/acks']);
+        S.acks = new Map(Object.entries(a.acks || {}));
+      } catch (e) { /* keep the previous ack view */ }
+
       derive();
       renderAll();
+    }
+
+    // Server-side alert_change history is authoritative for anything that
+    // happened before this page was opened; live transitions fill in from there.
+    let serverEventsLoaded = false;
+    function mergeServerEvents(list) {
+      if (serverEventsLoaded || !list.length) return;
+      serverEventsLoaded = true;
+      const seeded = list.map(e => ({
+        ts: new Date(e.ts),
+        cam: e.camera,
+        level: e.curr === 'red' ? 'red' : e.curr === 'yellow' ? 'yellow' : 'green',
+        msg: `${ALERT_TW[e.prev] || e.prev} → ${ALERT_TW[e.curr] || e.curr}` +
+          ((e.redReason || e.yellowReason) ? `｜${e.redReason || e.yellowReason}` : ''),
+        kind: 'alert', historic: true
+      })).filter(e => !isNaN(e.ts));
+      S.events = seeded.concat(S.events).slice(0, MAX_EVENTS);
+      feedRendered = -1;
     }
 
     // Turns raw status + metadata into one view model per camera, and folds
@@ -886,46 +1260,80 @@
     // and whether an operator has already acknowledged it.
     function derive() {
       const now = Date.now();
-      const staleMs = cfg.staleMin * 60000, offMs = cfg.offlineMin * 60000;
       const out = [];
+      let silent = 0;
 
       for (const [name, m] of S.byName) {
         const s = S.status[name] || null;
         const ts = s ? parseTs(s.timestamp) : null;
         const ageSec = ts ? (now - ts.getTime()) / 1000 : null;
 
+        // --- Health, from two independent signals -----------------------
+        // 1. The detector says this camera's image fetch failed. That is a
+        //    fault in one station's feed, and it names itself.
+        // 2. Nothing has been written for this camera for a long time. That
+        //    also catches the case the detector cannot report: itself dying.
+        const fail = S.failures[name];
+        const failTs = fail ? new Date(fail.ts) : null;
+        const feedFailing = !!(failTs && !isNaN(failTs) && (!ts || failTs > ts));
+
+        const beat = (s && +s.reportInterval) || 0;
+        const slowSec = beat ? beat * (cfg.slowMult || SLOW_MULT) : FALLBACK_SLOW_SEC;
+        const deadSec = beat ? beat * (cfg.deadMult || DEAD_MULT) : FALLBACK_DEAD_SEC;
+
         let link = 'live';
         if (!s || !ts) link = 'nodata';
-        else if (now - ts.getTime() > offMs) link = 'offline';
-        else if (now - ts.getTime() > staleMs) link = 'stale';
+        else if (ageSec > Math.max(deadSec, 60)) link = 'nodata';
+        else if (ageSec > Math.max(slowSec, 30)) link = 'slow';
+        if (link === 'nodata') silent++;
+        if (feedFailing && link === 'live') link = 'fail';
 
         const alert = (s && s.alert) || 'unknown';
         const reason = s ? (s.redReason || s.yellowReason || '') : '';
 
-        // Severity ranking for the queue. A dead camera outranks a yellow
-        // one: a blind station is a bigger operational problem than a
-        // station that is reporting a mild anomaly.
-        let rank;
-        if (alert === 'red') rank = 0;
-        else if (link === 'offline' || link === 'nodata') rank = 1;
-        else if (alert === 'yellow') rank = 2;
-        else if (link === 'stale') rank = 3;
-        else rank = 4;
+        // --- Red alert timeline -----------------------------------------
+        // timestamp refreshes every cycle even while the 24h hold is latched,
+        // so on its own it cannot tell a debris flow happening now from one
+        // that happened this morning. redSince can.
+        const redSince = alert === 'red' && s ? parseTs(s.redSince) : null;
+        const holdUntil = s ? parseTs(s.redHoldUntil) : null;
+        const redAgeSec = redSince ? (now - redSince.getTime()) / 1000 : null;
+        const redLive = alert === 'red' && (redAgeSec == null || redAgeSec <= LIVE_RED_MIN * 60);
 
-        const images = buildSequence(s);
-        const ackKey = S.acks.get(name);
+        // --- Acknowledgement, scoped to this specific alert episode ------
+        const eventKey = alert === 'red'
+          ? (s && s.redSince) || 'red'
+          : alert;
+        const ackRec = S.acks.get(name);
+        const ackValid = !!(ackRec && ackRec.eventKey === eventKey);
+        const acked = ackValid && ackRec.action === 'ack';
+        const cleared = ackValid && ackRec.action === 'clear_red';
+
+        let rank;
+        if (alert === 'red' && !cleared) rank = redLive ? 0 : 1;
+        else if (link === 'nodata' || link === 'fail') rank = 2;
+        else if (alert === 'yellow') rank = 3;
+        else if (link === 'slow') rank = 4;
+        else rank = 5;
 
         const vm = {
-          name, meta: m, raw: s, alert, link, ts, ageSec, reason, rank, images,
+          name, meta: m, raw: s, alert, link, ts, ageSec, reason, rank,
+          images: buildSequence(s),
           prop: (s && s.proportion) || {},
           conf: (s && s.confidence) || {},
           overlap: !!(s && s.overlap_muddy_clear),
-          acked: ackKey === alert && (alert === 'red' || alert === 'yellow'),
-          abnormal: rank <= 3
+          beat, redSince, holdUntil, redAgeSec, redLive,
+          eventKey, ackRec: ackValid ? ackRec : null, acked, cleared,
+          feedFailing,
+          abnormal: rank <= 4
         };
         out.push(vm);
-        pushSeries(vm);
       }
+
+      // If nearly everything went quiet at once, the detector is down — say it
+      // once. Reporting 63 separate faults for one cause trains people to
+      // ignore the fault list entirely.
+      S.systemDown = out.length > 0 && silent / out.length >= SYSTEM_DOWN_RATIO;
 
       out.sort((a, b) => a.rank - b.rank || (b.ageSec == null ? 1 : a.ageSec - b.ageSec) || a.name.localeCompare(b.name, 'zh-Hant'));
       S.view = out;
@@ -951,14 +1359,38 @@
       }).sort((a, b) => (a.ts && b.ts) ? a.ts - b.ts : 0);
     }
 
-    function pushSeries(vm) {
-      if (!vm.ts) return;
-      const arr = S.series.get(vm.name) || [];
-      const last = arr[arr.length - 1];
-      if (last && last.t === vm.ts.getTime()) return;   // same frame, nothing new
-      arr.push({ t: vm.ts.getTime(), prop: vm.prop, conf: vm.conf, alert: vm.alert });
-      if (arr.length > MAX_SERIES) arr.splice(0, arr.length - MAX_SERIES);
-      S.series.set(vm.name, arr);
+    // Real history, from the CSV the detector has been writing all along.
+    // Accumulating in the browser instead meant the trend chart reset on every
+    // refresh and could never show anything that happened before the page
+    // was opened — which is exactly when the interesting things happen.
+    const seriesPending = new Set();
+    async function loadSeries(name, force) {
+      if (DEMO) {
+        S.series.set(name, demoSeries(name));
+        if (S.selected === name) {
+          const vm = S.viewByName.get(name);
+          if (vm) drawChart(vm);
+        }
+        return;
+      }
+      if (seriesPending.has(name)) return;
+      if (!force && S.series.has(name)) return;
+      seriesPending.add(name);
+      try {
+        const d = await fetchJSON(['/api/metrics/' + encodeURIComponent(name) + '?hours=24']);
+        S.series.set(name, (d.points || []).map(p => ({
+          t: parseTs(p.t) ? parseTs(p.t).getTime() : 0,
+          prop: p.prop || {}, conf: p.conf || {}, alert: p.alert
+        })).filter(p => p.t));
+        if (S.selected === name) {
+          const vm = S.viewByName.get(name);
+          if (vm) drawChart(vm);
+        }
+      } catch (e) {
+        S.series.set(name, []);   // remember the miss so it is not retried every poll
+      } finally {
+        seriesPending.delete(name);
+      }
     }
 
     /* ==========================================================
@@ -982,13 +1414,14 @@
               (vm.reason ? `｜${vm.reason}` : ''),
             kind: 'alert'
           });
-          if (up && (vm.alert === 'red' || vm.alert === 'yellow')) {
-            S.acks.delete(vm.name);       // a fresh escalation needs a fresh ack
-            escalations.push(vm);
-          }
+          // A fresh escalation carries a new eventKey, so any previous
+          // acknowledgement stops applying on its own — nothing to clear.
+          if (up && (vm.alert === 'red' || vm.alert === 'yellow')) escalations.push(vm);
         }
 
-        if (!first && pl && pl !== vm.link && (pl === 'live' || vm.link === 'live')) {
+        // Suppressed while the detector is down: that is one fault, already
+        // reported once, not sixty-three separate feed outages.
+        if (!first && !S.systemDown && pl && pl !== vm.link && (pl === 'live' || vm.link === 'live')) {
           addEvent({
             ts: new Date(), cam: vm.name, level: vm.link === 'live' ? 'green' : 'gray',
             msg: vm.link === 'live' ? '影像回報恢復' : `影像中斷（${LINK_TW[vm.link]}）`,
@@ -1001,7 +1434,6 @@
       }
 
       if (escalations.length) {
-        saveAcks();
         const worst = escalations.some(v => v.alert === 'red') ? 'red' : 'yellow';
         alarm(worst);
         escalations.slice(0, 4).forEach(v => toast(v));
@@ -1094,12 +1526,12 @@
 
     const styleCache = new Map();
     function markerStyle(alert, link, selected, name) {
-      const showLabel = S.showLabels && (alert === 'red' || alert === 'yellow' || link === 'offline' || selected);
+      const showLabel = S.showLabels && (alert === 'red' || alert === 'yellow' || link === 'nodata' || link === 'fail' || selected);
       const key = [alert, link, selected, showLabel ? name : ''].join('|');
       if (styleCache.has(key)) return styleCache.get(key);
 
       const colors = { red: '#ff4d4f', yellow: '#fbbf24', green: '#22c55e', unknown: '#7c8aa0' };
-      const dead = link === 'offline' || link === 'nodata';
+      const dead = link === 'nodata' || link === 'fail';
       const fill = dead ? '#7c8aa0' : (colors[alert] || colors.unknown);
       const r = alert === 'red' ? 11 : alert === 'yellow' ? 9 : dead ? 8 : 6;
 
@@ -1140,7 +1572,11 @@
     }
 
     function syncPulses() {
-      const want = new Set(S.view.filter(v => v.alert === 'red' && !v.acked && v.meta.feature).map(v => v.name));
+      // Only a live, unhandled red pulses. A latched red from this morning
+      // that keeps flashing all day is how a warning stops being a warning.
+      const want = new Set(S.view
+        .filter(v => v.alert === 'red' && v.redLive && !v.acked && !v.cleared && v.meta.feature)
+        .map(v => v.name));
       for (const [name, ov] of pulses) {
         if (!want.has(name)) { map.removeOverlay(ov); pulses.delete(name); }
       }
@@ -1183,47 +1619,73 @@
 
     function renderKpis() {
       // A camera that stopped reporting is not "normal", whatever its last
-      // light said — it is counted as 停更/離線 so a dead feed can never sit
+      // light said — it is counted as a fault so a dead feed can never sit
       // quietly inside the green total.
-      const c = { red: 0, yellow: 0, offline: 0, green: 0 };
+      const c = { red: 0, held: 0, yellow: 0, fault: 0, green: 0 };
       for (const v of S.view) {
-        if (v.alert === 'red') c.red++;
-        else if (v.link !== 'live') c.offline++;
+        if (v.alert === 'red' && !v.cleared) { c.red++; if (!v.redLive) c.held++; }
+        else if (v.link === 'nodata' || v.link === 'fail') c.fault++;
         else if (v.alert === 'yellow') c.yellow++;
         else c.green++;
       }
       $('#kpi-red').textContent = c.red;
       $('#kpi-yellow').textContent = c.yellow;
-      $('#kpi-offline').textContent = c.offline;
+      $('#kpi-offline').textContent = c.fault;
       $('#kpi-green').textContent = c.green;
+
+      // "紅燈 7（鎖定 5）" — the held ones are still a warning state, but they
+      // are not five debris flows happening right now.
+      const sub = $('#kpi-red-sub');
+      if (sub) {
+        sub.textContent = c.held ? `鎖定 ${c.held}` : '';
+        sub.classList.toggle('hidden', !c.held);
+      }
+
+      // Only an unacknowledged, currently-live red makes the counter pulse.
       const redPill = document.querySelector('.kpi.red');
-      redPill.dataset.hot = (c.red > 0 && S.view.some(v => v.alert === 'red' && !v.acked)) ? '1' : '0';
-      document.title = (c.red ? `🔴 ${c.red} ` : c.yellow ? `🟡 ${c.yellow} ` : '') + '土石流監測值班台';
+      redPill.dataset.hot = S.view.some(v => v.alert === 'red' && v.redLive && !v.acked && !v.cleared) ? '1' : '0';
+      // The demo marker has to survive every re-render: the tab title is what
+      // a bookmark and a shared-link preview show.
+      document.title = (DEMO ? '【展示版】' : '')
+        + (c.red ? `🔴 ${c.red} ` : c.yellow ? `🟡 ${c.yellow} ` : '')
+        + '土石流監測值班台';
     }
 
     function renderConn() {
       const conn = $('#conn'), txt = $('#conn-txt');
-      const bad = S.failures > 0;
+      const fails = S.pollFails || 0;
+      const bad = fails > 0 || S.systemDown;
       conn.className = 'conn ' + (bad ? 'bad' : 'ok');
-      txt.textContent = bad ? `連線中斷（重試 ${S.failures}）` : '連線正常';
+      txt.textContent = fails ? `連線中斷（重試 ${fails}）`
+        : S.systemDown ? '偵測程式未運行' : '連線正常';
 
       const ages = S.view.map(v => v.ageSec).filter(a => a != null);
       const freshest = ages.length ? Math.min(...ages) : null;
       $('#data-age').textContent = freshest == null ? '尚無影像資料' : '最新影像 ' + fmtAge(freshest);
 
+      // Two different failures, two different messages. "Cannot reach the
+      // server" is the viewer's problem; "the detector is not running" is the
+      // system's, and only the second one means nothing is being watched.
       let banner = $('#offline-banner');
-      if (S.failures >= 3 && !banner) {
-        banner = el('div', 'banner', '⚠ 無法連線到監測伺服器，畫面資料可能已過期');
-        banner.id = 'offline-banner';
-        document.body.appendChild(banner);
-      } else if (S.failures === 0 && banner) banner.remove();
+      const msg = fails >= 3 ? '⚠ 無法連線到監測伺服器，畫面資料可能已過期'
+        : S.systemDown ? `⚠ 全部測站停止回報 — 偵測程式可能未運行（最新影像 ${freshest == null ? '無' : fmtAge(freshest)}）`
+          : null;
+      if (msg) {
+        if (!banner) {
+          banner = el('div', 'banner');
+          banner.id = 'offline-banner';
+          document.body.appendChild(banner);
+        }
+        if (banner.textContent !== msg) banner.textContent = msg;
+      } else if (banner) banner.remove();
     }
 
     function passesFilter(vm, q) {
+      const faulty = vm.link === 'nodata' || vm.link === 'fail';
       if (S.kpiFilter) {
-        if (S.kpiFilter === 'red' && vm.alert !== 'red') return false;
-        if (S.kpiFilter === 'offline' && !(vm.alert !== 'red' && vm.link !== 'live')) return false;
-        if (S.kpiFilter === 'yellow' && !(vm.alert === 'yellow' && vm.link === 'live')) return false;
+        if (S.kpiFilter === 'red' && !(vm.alert === 'red' && !vm.cleared)) return false;
+        if (S.kpiFilter === 'offline' && !(!(vm.alert === 'red' && !vm.cleared) && faulty)) return false;
+        if (S.kpiFilter === 'yellow' && !(vm.alert === 'yellow' && !faulty)) return false;
         if (S.kpiFilter === 'green' && !(vm.alert === 'green' && vm.link === 'live')) return false;
       }
       if (q) {
@@ -1235,11 +1697,14 @@
 
     // Section membership mirrors the KPI counters exactly, so a number in the
     // header always leads to the same set of rows when clicked.
+    const isRed = v => v.alert === 'red' && !v.cleared;
+    const isFaulty = v => v.link === 'nodata' || v.link === 'fail';
     const SECTIONS = [
-      { id: 'red', title: '🔴 紅燈警報', cls: 's-red', test: v => v.alert === 'red' },
-      { id: 'offline', title: '⚫ 停更 / 離線', cls: 's-offline', test: v => v.alert !== 'red' && v.link !== 'live' },
-      { id: 'yellow', title: '🟡 黃燈警示', cls: 's-yellow', test: v => v.alert === 'yellow' && v.link === 'live' },
-      { id: 'green', title: '🟢 正常回報', cls: 's-green', test: v => v.link === 'live' && v.alert !== 'red' && v.alert !== 'yellow' }
+      { id: 'red', title: '🔴 紅燈警報', cls: 's-red', test: v => isRed(v) && v.redLive },
+      { id: 'redheld', title: '🔴 紅燈鎖定中', cls: 's-red', test: v => isRed(v) && !v.redLive },
+      { id: 'offline', title: '⚫ 測站異常', cls: 's-offline', test: v => !isRed(v) && isFaulty(v) },
+      { id: 'yellow', title: '🟡 黃燈警示', cls: 's-yellow', test: v => !isRed(v) && !isFaulty(v) && v.alert === 'yellow' },
+      { id: 'green', title: '🟢 正常回報', cls: 's-green', test: v => !isRed(v) && !isFaulty(v) && v.alert !== 'yellow' }
     ];
     const collapsed = new Set(readLS(LS + '.collapsed', ['green']));
     const rowCache = new Map();
@@ -1257,14 +1722,18 @@
         // healthy stations cannot bury the two that need attention.
         const summarise = cfg.abnormalOnly && sec.id === 'green' && !q && !S.kpiFilter;
         // A search is an explicit request to see matches, so it overrides
-        // whatever the operator had folded away.
-        const isShut = !q && (collapsed.has(sec.id) || summarise);
+        // whatever the operator had folded away. A non-empty red section is
+        // never folded at all: a fold set some other day must not be able to
+        // hide today's debris flow behind a collapsed header.
+        const forced = sec.cls === 's-red' && items.length > 0;
+        const isShut = !forced && !q && (collapsed.has(sec.id) || summarise);
         if (!items.length) continue;
 
         const head = el('div', 'sec-head ' + sec.cls);
         head.append(el('span', 'caret', '▾'), el('span', null, sec.title), el('span', 'n', items.length));
         if (isShut) head.classList.add('collapsed');
         head.onclick = () => {
+          if (forced) return;      // red stays open while it has anything in it
           if (summarise) {
             // Expanding the summarised green section is the same intent as
             // turning "異常優先" off; do that instead of fighting it.
@@ -1292,6 +1761,14 @@
         box.appendChild(e);
       }
       $('#q-count').textContent = list.length + ' / ' + S.view.length;
+
+      // Bottom-tab badge: how many stations need a person to look at them.
+      const badge = $('#mt-badge');
+      if (badge) {
+        const n = S.view.filter(v => v.abnormal).length;
+        badge.textContent = n > 99 ? '99+' : n;
+        badge.classList.toggle('zero', n === 0);
+      }
     }
 
     function queueRow(vm) {
@@ -1330,11 +1807,17 @@
       const b = el('span', 'badge ' + (vm.alert === 'unknown' ? 'gray' : vm.alert));
       b.append(el('span', null, ALERT_ICON[vm.alert]), el('span', null, vm.alert.toUpperCase()));
       row._right.appendChild(b);
-      if (vm.link !== 'live') {
-        row._right.appendChild(el('span', 'badge gray', LINK_TW[vm.link]));
+
+      // A held red says when its event happened. Without that, this morning's
+      // debris flow is indistinguishable from one starting right now.
+      if (vm.alert === 'red' && !vm.redLive && vm.redSince) {
+        row._right.appendChild(el('span', 'badge gray', '鎖定中 ' + fmtClock(vm.redSince).slice(0, 5)));
       }
-      if (vm.acked) row._right.appendChild(el('span', 'badge ack', '✓ 已確認'));
-      const age = el('span', 'q-age' + (vm.link === 'offline' || vm.link === 'nodata' ? ' offline' : vm.link === 'stale' ? ' stale' : ''), fmtAge(vm.ageSec));
+      if (vm.link !== 'live') row._right.appendChild(el('span', 'badge gray', LINK_TW[vm.link]));
+      if (vm.cleared) row._right.appendChild(el('span', 'badge ack', '✓ 已解除'));
+      else if (vm.acked) row._right.appendChild(el('span', 'badge ack', '✓ 已確認'));
+
+      const age = el('span', 'q-age' + (vm.link === 'nodata' || vm.link === 'fail' ? ' offline' : vm.link === 'slow' ? ' stale' : ''), fmtAge(vm.ageSec));
       row._right.appendChild(age);
       return row;
     }
@@ -1368,11 +1851,15 @@
       if (!S.byName.has(name)) return;
       S.selected = name;
       S.frame.idx = -1;      // -1 => track the newest frame
+      loadSeries(name, true);
       renderDetail(true);
       renderQueue();
       updateMap();
       flyTo(name, Math.max(map.getView().getZoom(), 11));
-      if ($('#app').dataset.mode === 'wall') setMode('console');
+      if (!$('#wall-shell').classList.contains('hidden')) setMode('console');
+      // On a phone the detail panel is a separate tab, so picking a camera
+      // has to take you there or the tap appears to do nothing.
+      if (isMobile()) setMobileTab('detail');
     }
 
     let detailBuilt = null;
@@ -1475,8 +1962,15 @@
       bAck.onclick = () => {
         const cur = S.viewByName.get(S.selected);
         if (!cur) return;
-        if (S.acks.get(cur.name) === cur.alert) S.acks.delete(cur.name); else S.acks.set(cur.name, cur.alert);
-        saveAcks(); derive(); renderAll();
+        if (cur.acked || cur.cleared) sendAck(cur, 'unack');   // undo needs no reason
+        else openAckSheet(cur, 'ack');
+      };
+      const bClear = el('button', 'act danger hidden', '⊘ 解除鎖定');
+      bClear.id = 'd-clear';
+      bClear.title = '僅解除本板面的呈現，不會解除偵測程式的 24 小時鎖定';
+      bClear.onclick = () => {
+        const cur = S.viewByName.get(S.selected);
+        if (cur) openAckSheet(cur, 'clear_red');
       };
       const bLoc = el('button', 'act', '📍 地圖定位');
       bLoc.onclick = () => flyTo(S.selected, 14);
@@ -1485,7 +1979,7 @@
       const bRaw = el('button', 'act', cfg.raw ? '🖼 顯示標註' : '🖼 顯示原始');
       bRaw.id = 'd-raw';
       bRaw.onclick = () => { cfg.raw = !cfg.raw; saveCfg(); syncControls(); renderAll(); };
-      acts.append(bAck, bLoc, bSrc, bRaw);
+      acts.append(bAck, bClear, bLoc, bSrc, bRaw);
       box.appendChild(acts);
 
       $('#d-prev').onclick = () => stepFrame(-1);
@@ -1500,18 +1994,38 @@
       if (!st) return;
       st.className = 'd-status a-' + vm.alert;
       st.querySelector('.s-icon').textContent = ALERT_ICON[vm.alert];
-      st.querySelector('.s-lv').textContent = ALERT_TW[vm.alert] + (vm.acked ? '（已確認）' : '');
+
+      let title = ALERT_TW[vm.alert];
+      if (vm.alert === 'red') title += vm.redLive ? '（現正發生）' : '（鎖定中）';
+      if (vm.cleared) title += '・已解除';
+      else if (vm.acked) title += '・已確認';
+      st.querySelector('.s-lv').textContent = title;
+
       const sub = [];
-      sub.push(vm.link === 'live' ? `更新於 ${fmtAge(vm.ageSec)}` : `${LINK_TW[vm.link]}・最後回報 ${fmtAge(vm.ageSec)}`);
+      // For a red alert the event time matters more than the frame time.
+      if (vm.alert === 'red' && vm.redSince) {
+        sub.push(`事件於 ${vm.redSince.toLocaleString('zh-TW', { hour12: false })}（${fmtAge(vm.redAgeSec)}）`);
+        if (vm.holdUntil) sub.push(`鎖定至 ${vm.holdUntil.toLocaleString('zh-TW', { hour12: false })}`);
+      }
+      sub.push(vm.link === 'live' ? `影像更新於 ${fmtAge(vm.ageSec)}` : `${LINK_TW[vm.link]}・最後回報 ${fmtAge(vm.ageSec)}`);
       if (vm.reason) sub.push(vm.reason);
       if (vm.overlap) sub.push('濁水與清水區域重疊');
+      if (vm.ackRec) {
+        sub.push(`${vm.ackRec.action === 'clear_red' ? '解除' : '確認'}：${vm.ackRec.by}・${REASON_TW[vm.ackRec.reason] || vm.ackRec.reason}` +
+          (vm.ackRec.reasonText ? `（${vm.ackRec.reasonText}）` : ''));
+      }
       st.querySelector('.s-sub').textContent = sub.join('｜');
 
       const ackBtn = $('#d-ack');
       if (ackBtn) {
-        ackBtn.textContent = vm.acked ? '↺ 取消確認' : '✓ 確認警報';
-        ackBtn.className = 'act ' + (vm.acked ? '' : 'primary');
+        const handled = vm.acked || vm.cleared;
+        ackBtn.textContent = handled ? '↺ 取消處置' : '✓ 確認警報';
+        ackBtn.className = 'act ' + (handled ? '' : 'primary');
+        ackBtn.disabled = vm.alert !== 'red' && vm.alert !== 'yellow' && !handled;
+        ackBtn.style.opacity = ackBtn.disabled ? .45 : '';
       }
+      const clrBtn = $('#d-clear');
+      if (clrBtn) clrBtn.classList.toggle('hidden', !(vm.alert === 'red' && !vm.redLive && !vm.cleared));
       const rawBtn = $('#d-raw');
       if (rawBtn) rawBtn.textContent = cfg.raw ? '🖼 顯示標註' : '🖼 顯示原始';
 
@@ -1542,8 +2056,9 @@
           ['架設地點', vm.meta.place || '—'],
           ['座標', isNaN(vm.meta.lon) ? '—' : `${vm.meta.lon.toFixed(5)}, ${vm.meta.lat.toFixed(5)}`],
           ['最後判讀時間', vm.ts ? vm.ts.toLocaleString('zh-TW', { hour12: false }) : '—'],
-          ['連線狀態', LINK_TW[vm.link]],
-          ['本次樣本數', String((S.series.get(vm.name) || []).length)]
+          ['回報節奏', vm.beat ? `每 ${vm.beat} 秒` : '樣本不足'],
+          ['連線狀態', LINK_TW[vm.link] + (vm.feedFailing ? '（偵測端回報抓取失敗）' : '')],
+          ['近 24 小時樣本', String((S.series.get(vm.name) || []).length)]
         ];
         for (const [k, v] of rows) { kv.append(el('dt', null, k), el('dd', null, v)); }
       }
@@ -1581,6 +2096,123 @@
     function syncPlayBtn() { $('#btn-play').textContent = S.frame.playing ? '⏸ 暫停' : '▶ 播放'; }
 
     /* ==========================================================
+       8b. Acknowledgement
+       ========================================================== */
+    const ACK = { vm: null, action: 'ack', reason: null };
+
+    function openAckSheet(vm, action) {
+      ACK.vm = vm; ACK.action = action; ACK.reason = null;
+
+      $('#ack-title').textContent = action === 'clear_red' ? '解除紅燈鎖定' : '確認警報';
+      const cam = $('#ack-cam');
+      cam.textContent = '';
+      cam.append(
+        el('span', 'lv', `${ALERT_ICON[vm.alert]} ${ALERT_TW[vm.alert]}`),
+        document.createTextNode(`　${vm.name}　${vm.meta.county}${vm.meta.district}`)
+      );
+
+      const note = $('#ack-note');
+      if (DEMO) {
+        note.textContent = '展示版沒有後端，無法寫入處置紀錄。實際部署時，此處會記錄處理人員、原因與時間。';
+        note.classList.remove('hidden');
+        $('#ack-ok').disabled = true;
+        $('#ack-ok').style.opacity = .45;
+      } else if (action === 'clear_red') {
+        // Say plainly what this does and does not do. An operator who thinks
+        // they disarmed the detector when they did not is worse off than one
+        // who was never offered the button.
+        note.textContent = '解除只影響本板面的呈現：此測站會從紅燈區移出並標記為已解除。'
+          + '偵測程式的 24 小時鎖定不受影響，仍會持續判定為紅燈。';
+        note.classList.remove('hidden');
+      } else note.classList.add('hidden');
+
+      $('#ack-by').value = S.operator || '';
+      $('#ack-text').value = '';
+      $('#ack-text').classList.add('hidden');
+      $('#ack-err').classList.add('hidden');
+
+      const box = $('#ack-reasons');
+      box.textContent = '';
+      for (const r of REASONS) {
+        const b = el('button', 'reason');
+        b.append(el('span', 'rd'), el('span', null, r.label));
+        b.onclick = () => {
+          ACK.reason = r.code;
+          [...box.children].forEach(c => c.classList.remove('sel'));
+          b.classList.add('sel');
+          $('#ack-text').classList.toggle('hidden', !r.needsText);
+          if (r.needsText) $('#ack-text').focus();
+        };
+        box.appendChild(b);
+      }
+
+      $('#ack-back').classList.remove('hidden');
+      setTimeout(() => $('#ack-by').focus(), 40);
+    }
+
+    function closeAckSheet() {
+      $('#ack-back').classList.add('hidden');
+      ACK.vm = null;
+    }
+
+    async function submitAck() {
+      const vm = ACK.vm;
+      if (!vm) return;
+      const by = $('#ack-by').value.trim();
+      const text = $('#ack-text').value.trim();
+      const needsText = REASONS.find(r => r.code === ACK.reason)?.needsText;
+
+      const err = $('#ack-err');
+      const fail = msg => { err.textContent = msg; err.classList.remove('hidden'); };
+      if (!by) return fail('請填寫處理人員姓名。');
+      if (!ACK.reason) return fail('請選擇處置原因。');
+      if (needsText && !text) return fail('選擇「其他」時必須填寫說明。');
+
+      S.operator = by;
+      writeLS(LS + '.operator', by);
+
+      const ok = await sendAck(vm, ACK.action, ACK.reason, text);
+      if (ok) closeAckSheet();
+      else fail('送出失敗，請確認伺服器連線後再試。');
+    }
+
+    async function sendAck(vm, action, reason, reasonText) {
+      if (DEMO) return false;   // nothing to write to; the sheet says so
+      const by = S.operator || $('#ack-by')?.value?.trim() || '';
+      if (!by && action === 'unack') {
+        // Undo still needs a name: the record is what makes it accountable.
+        openAckSheet(vm, 'ack');
+        return false;
+      }
+      const latest = vm.images[vm.images.length - 1];
+      const body = {
+        action, camera: vm.name, by,
+        alert: vm.alert,
+        alertTs: vm.raw ? vm.raw.timestamp : '',
+        eventKey: vm.eventKey,
+        reason: reason || '', reasonText: reasonText || '',
+        // Frames are kept for the misdetection reasons: they become labelled
+        // examples for whoever next tunes the model.
+        images: latest ? { annotated: latest.annotated, raw: latest.raw } : {}
+      };
+      try {
+        const r = await fetch('/api/acks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        if (!r.ok) { console.warn('ack rejected', await r.text()); return false; }
+        const a = await fetchJSON(['/api/acks']);
+        S.acks = new Map(Object.entries(a.acks || {}));
+        derive(); renderAll();
+        return true;
+      } catch (e) {
+        console.error('ack failed', e);
+        return false;
+      }
+    }
+
+    /* ==========================================================
        9. Trend chart (canvas)
        ========================================================== */
     function drawChart(vm) {
@@ -1614,7 +2246,7 @@
 
       if (data.length < 2) {
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText('累積樣本中…（本頁開啟後開始記錄）', PL + w / 2, PT + h / 2);
+        ctx.fillText(S.series.has(vm.name) ? '近 24 小時無可用紀錄' : '載入歷史中…', PL + w / 2, PT + h / 2);
         return;
       }
 
@@ -1703,6 +2335,34 @@
     /* ==========================================================
        11. View modes, controls, keyboard
        ========================================================== */
+    const mq = window.matchMedia('(max-width: 1100px)');
+    function isMobile() { return mq.matches; }
+
+    function setMobileTab(tab) {
+      const app = $('#app');
+      app.dataset.mtab = tab;
+      document.querySelectorAll('.mtab').forEach(b => b.classList.toggle('active', b.dataset.mtab === tab));
+      if (tab === 'map') setTimeout(() => map.updateSize(), 60);
+      if (tab === 'detail') {
+        const vm = S.selected && S.viewByName.get(S.selected);
+        if (vm) setTimeout(() => drawChart(vm), 60);
+      }
+    }
+
+    function syncLayout() {
+      const mobile = isMobile();
+      if (mobile) {
+        // The video wall is a wide-screen affordance; there is nothing useful
+        // to do with 63 tiles on a phone.
+        if (!$('#wall-shell').classList.contains('hidden')) setMode('console');
+        $('#app').dataset.mode = 'console';
+        if (!$('#app').dataset.mtab) setMobileTab('queue');
+      } else {
+        $('#app').removeAttribute('data-mtab');
+      }
+      setTimeout(() => map && map.updateSize(), 60);
+    }
+
     function setMode(mode) {
       const app = $('#app'), wall = $('#wall-shell');
       document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.mode === mode));
@@ -1725,8 +2385,8 @@
       $('#sw-raw').classList.toggle('on', cfg.raw);
       $('#sw-sound').classList.toggle('on', cfg.sound);
       $('#sw-notify').classList.toggle('on', cfg.notify);
-      $('#in-stale').value = cfg.staleMin;
-      $('#in-offline').value = cfg.offlineMin;
+      $('#in-stale').value = cfg.slowMult;
+      $('#in-offline').value = cfg.deadMult;
       $('#in-poll').value = cfg.pollSec;
       $('#btn-sound').textContent = cfg.sound ? '🔔' : '🔕';
       $('#btn-sound').classList.toggle('on', cfg.sound);
@@ -1762,6 +2422,10 @@
     function bindControls() {
       // View tabs
       $('#tabs').onclick = e => { const b = e.target.closest('.tab'); if (b) setMode(b.dataset.mode); };
+
+      // Mobile bottom tabs
+      $('#mtabs').onclick = e => { const b = e.target.closest('.mtab'); if (b) setMobileTab(b.dataset.mtab); };
+      mq.addEventListener('change', syncLayout);
 
       // KPI pills act as filters
       $('#kpis').onclick = e => {
@@ -1805,6 +2469,12 @@
       // Detail playback
       $('#btn-play').onclick = () => { S.frame.playing = !S.frame.playing; syncPlayBtn(); };
 
+      // Acknowledgement sheet
+      $('#ack-x').onclick = closeAckSheet;
+      $('#ack-cancel').onclick = closeAckSheet;
+      $('#ack-ok').onclick = submitAck;
+      $('#ack-back').onclick = e => { if (e.target === $('#ack-back')) closeAckSheet(); };
+
       // Header buttons
       $('#btn-sound').onclick = () => { cfg.sound = !cfg.sound; saveCfg(); syncControls(); if (cfg.sound) alarm('yellow'); };
       $('#btn-full').onclick = () => {
@@ -1835,16 +2505,12 @@
         }
         cfg.notify = !cfg.notify; saveCfg(); syncControls();
       };
-      $('#in-stale').onchange = e => { cfg.staleMin = Math.max(1, +e.target.value || 5); saveCfg(); derive(); renderAll(); };
-      $('#in-offline').onchange = e => { cfg.offlineMin = Math.max(2, +e.target.value || 15); saveCfg(); derive(); renderAll(); };
+      $('#in-stale').onchange = e => { cfg.slowMult = Math.max(2, +e.target.value || SLOW_MULT); saveCfg(); derive(); renderAll(); };
+      $('#in-offline').onchange = e => { cfg.deadMult = Math.max(3, +e.target.value || DEAD_MULT); saveCfg(); derive(); renderAll(); };
       $('#in-poll').onchange = e => { cfg.pollSec = Math.max(2, +e.target.value || 5); saveCfg(); restartPolling(); };
       $('#btn-export').onclick = exportCsv;
-      $('#btn-ackall').onclick = () => {
-        S.view.filter(v => v.alert === 'red' || v.alert === 'yellow').forEach(v => S.acks.set(v.name, v.alert));
-        saveAcks(); derive(); renderAll();
-      };
       $('#btn-reset').onclick = () => {
-        localStorage.removeItem(LS); localStorage.removeItem(LS + '.acks'); localStorage.removeItem(LS + '.collapsed');
+        localStorage.removeItem(LS); localStorage.removeItem(LS + '.collapsed'); localStorage.removeItem(LS + '.operator');
         location.reload();
       };
 
@@ -1924,6 +2590,7 @@
     }
 
     async function boot() {
+      if (DEMO) showDemoBanner();
       syncControls();
       bindControls();
       syncPlayBtn();
@@ -1931,7 +2598,9 @@
       try {
         await loadCameras();
       } catch (e) {
-        $('#queue').innerHTML = '<div class="empty"><span class="big">⚠</span>無法載入 cctv.json<br>請確認伺服器已啟動（python server.py）</div>';
+        $('#queue').innerHTML = DEMO
+          ? '<div class="empty"><span class="big">⚠</span>無法載入展示資料<br>demo/demo-data.json 讀取失敗</div>'
+          : '<div class="empty"><span class="big">⚠</span>無法載入 cctv.json<br>請確認伺服器已啟動（python server.py）</div>';
         console.error(e);
         return;
       }
@@ -1953,12 +2622,14 @@
       setInterval(() => { derive(); renderQueue(); renderConn(); if (!$('#wall-shell').classList.contains('hidden')) renderWall(); }, 15000);
 
       window.addEventListener('resize', debounce(() => {
+        syncLayout();     // matchMedia alone has missed this in some browsers
         map.updateSize();
         const vm = S.selected && S.viewByName.get(S.selected);
         if (vm) drawChart(vm);
       }, 150));
 
-      if (cfg.mode && cfg.mode !== 'console') setMode(cfg.mode);
+      syncLayout();
+      if (!isMobile() && cfg.mode && cfg.mode !== 'console') setMode(cfg.mode);
 
       // Deep link: console.html?cam=<name>
       const want = new URLSearchParams(location.search).get('cam');
